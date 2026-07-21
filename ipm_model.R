@@ -222,8 +222,13 @@ plot(mesh_points, elas_marginal,
      ylab = "Elasticity",
      main = "Marginal elasticity by current size")
 
-E_matrix[101,101]
-
+E_matrix_rep <- E_matrix[, -c(101, 102, 103)]
+plot(mesh_points, E_matrix_rep[101,],
+     type = "l", lwd = 2,
+     xlab = "log(LLL)",
+     ylab = "Elasticity",
+     main = "Elasticity of fecundity")
+sum(E_matrix_rep[101,])
 
 
 ### ipmr Analyses----
