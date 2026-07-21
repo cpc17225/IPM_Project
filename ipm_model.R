@@ -264,12 +264,3 @@ mesh_ps <- int_mesh(null_ipm)$logLLL_1 %>%
 plot(mesh_ps, mean_1, type = "l", xlab = expression( "Initial size z"[0]))
 plot(mesh_ps, var_1, type = "l", xlab = expression( "Initial size z"[0]))
 
-
-#From ipmr vignette
-#Does not work, not sure why
-#Trying to make mega-kernel for plotting and further analysis
-sub_k_nms <- names(null_ipm$sub_kernels)
-mega_mat_text <- c(sub_k_nms[1], sub_k_nms[2], sub_k_nms[3],
-                   sub_k_nms[4], sub_k_nms[5], sub_k_nms[6])
-mega_mat_2 <- make_iter_kernel(null_ipm,
-                               mega_mat = mega_mat_text)
