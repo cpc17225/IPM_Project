@@ -129,13 +129,13 @@ null_ipm <- define_pop_state(
 null_ipm <- make_ipm(proto_ipm = null_ipm,
                      iterations = 100)
 
-### Diagnostics----
+### Diagnostics and analyses----
 lambda(null_ipm)
 
 #Converges = TRUE
 is_conv_to_asymptotic(null_ipm)
 
-#Calculating left and right eigenvectors
+#Calculating left and right eigenvectors (excluding discrete states)
 right <- right_ev(null_ipm)
 left <- left_ev(null_ipm)
 #Dot product of left EV and right EV
@@ -143,9 +143,6 @@ dot <- sum(right$logLLL_w * left$logLLL_v)
 #Sensitivity of size (given in mesh rank) to lambda
 sensitivity <- (right$logLLL_w * left$logLLL_v)/dot
 plot(sensitivity)
-
-# Make this explicit - overlay sensitivity with size distribution
-par(mfrow = c(1,1))
 
 # Convert mesh index to actual log(LLL) values
 mesh_points <- seq(0.65, 5.6, length.out = length(sensitivity))
@@ -167,42 +164,41 @@ S_matrix <- outer(left$logLLL_v, right$logLLL_w) / dot
 
 K_mat <- matrix(0, nrow = 103, ncol = 103)
 
-# 2. Extract your list of 6 computed kernels from the model
+# Extract kernels
 kernels <- null_ipm$sub_kernels
 
-# 3. Sew the quilt together (matching your EQ1 - EQ5)
-
-# N -> N (EQ 5: Adult survival & growth)
+# N -> N (P kernel)
 K_mat[1:100, 1:100] <- kernels$P
 
-# N -> SB (EQ 1: Adults producing seeds into the bank)
+# N -> SB (Fe kernel)
 K_mat[101, 1:100] <- kernels$Fe
 
-# SB -> RB1 (EQ 2: Seeds surviving into first-year recruits)
+# SB -> RB1 (S kernel)
 K_mat[102, 101] <- kernels$S
 
-# RB1 -> RB2 (EQ 3: First-year recruits surviving to second year)
+# RB1 -> RB2 (T_RB1_RB2 kernel)
 K_mat[103, 102] <- kernels$T_RB1_RB2
 
-# RB1 -> N (EQ 4 part 1: First-year recruits emerging into continuous sizes)
+# RB1 -> N (R1 kernel)
 K_mat[1:100, 102] <- kernels$R1
 
-# RB2 -> N (EQ 4 part 2: Second-year recruits emerging into continuous sizes)
+# RB2 -> N (R2 kernel)
 K_mat[1:100, 103] <- kernels$R2
+
+# Eigenvectors for full kernel matrix
 w_full <- c(right$logLLL_w, right$SB_w, right$RB1_w, right$RB2_w)
 v_full <- c(left$logLLL_v, left$SB_v, left$RB1_v, left$RB2_v)
 
-# 2. Calculate the global dot product (the inner product)
+# Dot product
 dot_full <- sum(v_full * w_full)
 
-# 3. Calculate the 103x103 Sensitivity Matrix via the outer product
+# Sensitivity calculation
 S_matrix <- outer(v_full, w_full) / dot_full
 
-# 4. Calculate the Elasticity Matrix (Hadamard/element-wise product)
-#    Note: Make sure your lambda is a single numeric scalar here
+# Elasticity matrix
 E_matrix <- (S_matrix * K_mat) / Re(eigen(K_mat)$values[1])
 
-# Sum of elasticities should = 1
+# Sum of elasticities (sums to 1)
 cat("Sum of elasticities:", sum(E_matrix), "\n")
 
 # Plot as surface
@@ -213,8 +209,7 @@ image(mesh_points, mesh_points, t(E_matrix_cont),
       ylab = "Size at t+1 (log LLL)",
       main = "Elasticity surface K(z',z)")
 
-# Marginal elasticity - collapse over future size
-# Tells you which CURRENT sizes drive lambda
+#Marginal elasticity - which z size drives lambda
 elas_marginal <- colSums(E_matrix_cont) * (5.6 - 0.65) / n
 plot(mesh_points, elas_marginal,
      type = "l", lwd = 2,
