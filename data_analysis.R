@@ -11,7 +11,6 @@ Tg_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_data.rds")
 Tg_rep <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_rep.rds")
 
 
-
 ### Survival analysis----
 
 # GLMM for survival analysis using the length of longest leaf (LLL)

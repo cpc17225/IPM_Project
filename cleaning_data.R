@@ -91,10 +91,18 @@ for(i in 0:4){
   Tg_climate <- add_climate_lag(Tg_climate, Climate_Data, i)
 }
 
-saveRDS(Tg_climate, file = "Tg_climate.rds")
+# Adding z-scores for snowpack
+Tg_climate <- Tg_climate %>% 
+  mutate(snowpack0_z = c(scale(snowpack_lag0))) %>% 
+  mutate(snowpack1_z = c(scale(snowpack_lag1))) %>% 
+  mutate(snowpack2_z = c(scale(snowpack_lag2))) %>% 
+  mutate(snowpack3_z = c(scale(snowpack_lag3))) %>% 
+  mutate(snowpack4_z = c(scale(snowpack_lag4)))
+
+saveRDS(Tg_climate, file = "Tg_climate_rds.rds")
 
 #Reproductive Tg_climate
 Tg_climate_rep <- Tg_climate %>% 
   filter(NumFlowers>0)
 
-saveRDS(Tg_climate_rep, file = "Tg_climate_rep.rds")
+saveRDS(Tg_climate_rep, file = "Tg_climate_rep_rds.rds")

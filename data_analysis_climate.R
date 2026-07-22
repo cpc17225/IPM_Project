@@ -95,7 +95,7 @@ summary(best_model)
 summary(surv_models$lag_2)
 plot(simulateResiduals(best_model))
 plot(simulateResiduals(surv_models$lag_2))
-
+plot(jitter(Tg_climate$survival) ~ Tg_climate$snowpack_lag3)
 
 flower_models <- vector("list", 5)
 names(flower_models) <- paste0("lag_", 0:4)
