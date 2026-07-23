@@ -135,4 +135,8 @@ for (i in 0:4) {
     time = i
   )
 }
+#Exclude Na
+climate_data_with_lag <- climate_data_with_lag %>% 
+  filter(Year>=1979 & Year < 2026)
+
 saveRDS(climate_data_with_lag, file = "climate_data_with_lag.rds")
