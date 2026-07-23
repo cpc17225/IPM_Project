@@ -106,3 +106,33 @@ Tg_climate_rep <- Tg_climate %>%
   filter(NumFlowers>0)
 
 saveRDS(Tg_climate_rep, file = "Tg_climate_rep_rds.rds")
+
+
+
+### Lagged climate years----
+add_climate_lag_yr <- function(data, climate, time) {
+  # Rename climate columns to indicate lag (excluding the join key 'Year')
+  climate_lagged <- climate %>%
+    rename_with(~ paste0(.x, "_lag", time), -Year)
+  
+  # Shift: subtract time from Year so year t in data joins to year t-time climate
+  temp <- data %>%
+    mutate(Year_shifted = Year - time) %>%
+    left_join(climate_lagged, by = c("Year_shifted" = "Year")) %>%
+    select(-Year_shifted)
+  
+  return(temp)
+}
+
+# 1. Start with a copy of your base data
+climate_data_with_lag <- Climate_Data
+
+# 2. Loop through lags 0 to 4 and update climate_data_with_lag sequentially
+for (i in 0:4) {
+  climate_data_with_lag <- add_climate_lag(
+    data = climate_data_with_lag, 
+    climate = Climate_Data, 
+    time = i
+  )
+}
+saveRDS(climate_data_with_lag, file = "climate_data_with_lag.rds")
