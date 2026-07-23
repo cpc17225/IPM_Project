@@ -31,7 +31,7 @@ null_ipm <- define_kernel(
   
 )
 
-#Fecundity kernel (F -> SB)
+#Fecundity kernel (Fe -> SB)
 null_ipm <- define_kernel(
   proto_ipm = null_ipm,
   name = "Fe",
@@ -114,7 +114,7 @@ null_ipm <- define_domains(
 #Defining initial population state given average population sizes and estimations
 # n_logLLL follows a random uniform distribution for starting population vector
 # 100 is number of mesh points
-# The other constants are abritrary - do not affect lambda
+# The other constants are arbitrary - do not affect lambda
 null_ipm <- define_pop_state(
   proto_ipm = null_ipm,
   pop_vectors = list(
