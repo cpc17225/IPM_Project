@@ -231,6 +231,49 @@ summary(growth_models_p$lag_4)
 
 
 
+#Survival of recruits
+#Visualization since distribution and range is changing
+Tg_data %>% 
+  filter(!is.na(LLL)) %>%
+  mutate(lgLLL = log(LLL)) %>% 
+  filter(lgLLL < 4.3) %>% 
+  mutate(size_bin = cut(lgLLL, breaks = 12)) %>% 
+  group_by(size_bin) %>%
+  summarise(surv_rate = mean(survival), 
+            surv_var = var(survival),
+            n= n()) %>% 
+  ggplot(aes(x = size_bin, y = surv_rate, size = n)) +
+  geom_point(aes(size = n, color = surv_var)) +
+  ylim(0, 1)
+
+
+surv_models_recruit <- vector("list", 5)
+names(surv_models_recruit) <- paste0("lag_", 0:4)
+
+#No parabolic term from visualization
+for(i in 0:4){
+  
+  # Build climate variable names dynamically
+  snow_pack <- paste0("snowpack_lag", i)
+  
+  # Build formula dynamically
+  form <- as.formula(paste("survival ~ log(LLL) + ", snow_pack))
+  
+  # Fit model and store
+  surv_models_recruit[[paste0("lag_", i)]] <- glmmTMB(form,
+                                              family = binomial,
+                                              data = Tg_climate %>% filter(log(LLL)<3.13))
+}
+surv_recruit_AIC = sapply(surv_models_recruit, AIC)
+print(surv_recruit_AIC)
+summary(surv_models_recruit$lag_4)
+#Still lag 3 is best model
+#Use recruit distributions from GMM and do survival analysis on those
+#So filtering isn't arbitrary
+
+
+
+
 ### Explicit lagged models----
 
 model_surv_LLL_c3 <- glmmTMB(survival ~ log(LLL) + I(log(LLL)^2) + snowpack3_z,
@@ -265,6 +308,7 @@ model_flower_LLL <- glmmTMB(NumFlowers ~ log(LLLprev),
                             family = nbinom1(),
                             data = Tg_climate_rep)
 summary(model_flower_LLL)
+
 
 
 ### Extracting coefficients----

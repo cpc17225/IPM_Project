@@ -2,12 +2,20 @@
 
 library(tidyverse)
 library(mclust)
+library(readxl)
+library(glmmTMB)
+
 
 full_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_data.rds")
+Climate_Data <- read_csv("C:/Users/Owner/Downloads/barr_snowmelt_date_2022.csv")
+Climate_Data <- Climate_Data %>% 
+  rename("Year" = year)
+
 
 #Find LLL and numleaves for first year of identification
 first_appearance <- full_data%>%
-  group_by(Tag) %>%
+  group_by(Tag) %>% 
+  mutate(Tag = Tag) %>% 
   summarize(first_year = min(Year),
             first_size_LLL = LLL[Year == min(Year)],
             first_size_num = numleaves[Year == min(Year)])
@@ -21,7 +29,7 @@ recruits <- first_appearance %>%
 
 
 # Recruit size distribution - fit a Gaussian or gamma
-hist(recruits$first_size_LLL)
+hist(recruits$first_size_LLL, breaks = 30)
 hist(log(recruits$first_size_LLL), breaks = 50)
 
 # Annual recruit counts----
@@ -48,7 +56,7 @@ plot(density(log(recruits1$first_size_LLL)),
 
 
 #Use a Gaussian mixing model to see if the left-side peak is real
-mix_model <- Mclust(log(recruits$first_size_LLL))
+mix_model <- Mclust(log(recruits1$first_size_LLL))
 summary(mix_model)
 plot(mix_model, what = "BIC")
 
@@ -62,8 +70,10 @@ data.frame(Weight = weights, Mean_LogLLL = means, SD_LogLLL = sds)
 
 #Distinguish pathways
 plant_assignments <- mix_model$classification
-comp1_data <- log(recruits$first_size_LLL)[plant_assignments == 1]
-comp2_data <- log(recruits$first_size_LLL)[plant_assignments == 2]
+length(plant_assignments)
+recruits1$assign <- plant_assignments - 1
+comp1_data <- log(recruits1$first_size_LLL)[plant_assignments == 1]
+comp2_data <- log(recruits1$first_size_LLL)[plant_assignments == 2]
 
 hist(comp1_data, breaks = 20)
 hist(comp2_data, breaks = 20)
@@ -82,3 +92,59 @@ tapply(recruits1$first_size_LLL,
        mix_model$classification,
        summary)
 
+R1_individuals <- recruits1 %>% 
+  filter(plant_assignments == 1)
+
+model <- glmmTMB(assign ~ first_year,
+                 family = binomial,
+                 data = recruits1)
+summary(model)
+
+ggplot(recruits1, aes(x = first_year, y = assign))+
+  geom_point()+
+  geom_smooth(method = "gam", method.args = list(family = "binomial"))
+
+recruit_climate <- recruits1 %>% 
+  rename("Year" = first_year) %>% 
+  left_join(Climate_Data, by = "Year")
+
+ggplot(recruit_climate, aes(x = snowpack, y = assign))+
+  geom_smooth(method = "gam", method.args = list(family = "binomial"))
+ggplot(recruit_climate, aes(x = snowmelt, y = assign))+
+  geom_smooth(method = "gam", method.args = list(family = "binomial"))
+
+recruit_climate$P_large <- mix_model$z[,2]
+hist(recruit_climate$P_large)
+
+model_large <- lm(log(first_size_LLL) ~ snowmelt,
+                  data = recruit_climate)
+summary(model_large)
+plot(model_large)
+
+model_s <- glmmTMB(log(first_size_LLL) ~ s(snowmelt),
+                   family = gaussian,
+                   data = recruit_climate)
+summary(model_s)
+plot(simulateResiduals(model_s))
+
+mu_s <- predict(model_s)
+
+res <- log(recruit_climate$first_size_LLL) - mu_s
+
+hist(res)
+qqnorm(res)
+density(res)
+
+ggplot(recruit_climate, aes(x = snowmelt, y = log(first_size_LLL)))+
+  geom_smooth(method = "gam", method.args = list(family = "gaussian"), formula = y ~ s(x, k = 5))
+ggplot(recruit_climate, aes(x = snowpack, y = log(first_size_LLL)))+
+  geom_smooth(method = "lm", formula = y ~ poly(x,3))
+ggplot(recruit_climate, aes(x = scale(snowmelt * snowpack), y = log(first_size_LLL))) +
+  geom_smooth(method = "lm", formula = y ~ poly(x,3))
+
+model_recruit_c <- glmmTMB(log(first_size_LLL) ~ scale(snowmelt),
+                           family = gaussian(),
+                           dispformula = ~ scale(snowmelt),
+                           data = recruit_climate)
+summary(model_recruit_c)
+plot(simulateResiduals(model_recruit_c))

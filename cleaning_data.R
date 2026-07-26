@@ -3,7 +3,7 @@
 library(tidyverse)
 library(readxl)
 
-Grandiflora_Cleaned <- read_excel("~/Grandiflora_Cleaned.xlsx", na = "NA")
+Grandiflora_Cleaned <- read_excel("Grandiflora_Cleaned.xlsx", na = "NA")
 Climate_Data <- read_csv("C:/Users/Owner/Downloads/barr_snowmelt_date_2022.csv")
 
 ### Renaming, data structures----
@@ -38,6 +38,61 @@ clean_data <- clean_data %>% slice(-3189)
 clean_data <- clean_data %>% 
   mutate(LLL = replace(LLL, rep == 1, NA)) %>% 
   mutate(numleaves = replace(numleaves, rep == 1, NA))
+
+#Cases when numleaves is too high for a low LLL
+#Could be from herbivory or bad measurement
+clean_data[3285, "numleaves"] <- NA
+clean_data[3285, "LLL"] <- NA
+clean_data[3286, "numleavesprev"] <- NA
+clean_data[3287, "LLLprev"] <- NA
+clean_data[3131, "numleaves"] <- NA
+clean_data[3131, "LLL"] <- NA
+clean_data[3616, "numleaves"] <- NA
+clean_data[3616, "LLL"] <- NA
+clean_data[1015, "numleaves"] <- NA
+clean_data[1015, "LLL"] <- NA
+clean_data[1016, "numleavesprev"] <- NA
+clean_data[1016, "LLLprev"] <- NA
+clean_data[1484, "numleaves"] <- NA
+clean_data[1484, "LLL"] <- NA
+clean_data[1485, "numleavesprev"] <- NA
+clean_data[1485, "LLLprev"] <- NA
+clean_data[2244, "numleaves"] <- NA
+clean_data[2244, "LLL"] <- NA
+clean_data[2245, "numleavesprev"] <- NA
+clean_data[2245, "LLLprev"] <- NA
+clean_data[2931, "numleaves"] <- NA
+clean_data[2931, "LLL"] <- NA
+clean_data[3030, "numleaves"] <- NA
+clean_data[3030, "LLL"] <- NA
+clean_data[3031, "numleavesprev"] <- NA
+clean_data[3031, "LLLprev"] <- NA
+clean_data[3143, "numleaves"] <- NA
+clean_data[3143, "LLL"] <- NA
+
+#Case where LLL is too high given number of leaves
+clean_data[3606, "numleaves"] <- NA
+clean_data[3606, "LLL"] <- NA
+clean_data[3607, "numleavesprev"] <- NA
+clean_data[3607, "LLLPrev"] <- NA
+
+
+
+### Combining LLL and numleaves----
+
+#Using the sqrt of numleaves makes relationship more linear
+#cor(sqrt(numleaves), LLL) = 0.7867325
+#z-scaling both sqrt(numleaves) and LLL then adding together
+#Should remove some of the noise and make a better size metric
+
+clean_data <- clean_data %>% 
+  mutate(scaled_sqrt_num_leaves = c(scale(sqrt(numleaves)))) %>% 
+  mutate(scaled_LLL = c(scale(LLL))) %>% 
+  mutate(scaled_sqrt_numleavesprev = c(scale(sqrt(numleavesprev)))) %>% 
+  mutate(scaled_LLLprev = c(scale(LLLprev))) %>% 
+  mutate(comp_size = scaled_LLL + scaled_sqrt_num_leaves) %>% 
+  mutate(comp_size_prev = scaled_LLLprev + scaled_sqrt_numleavesprev)
+
 
 
 

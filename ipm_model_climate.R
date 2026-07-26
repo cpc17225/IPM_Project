@@ -165,3 +165,5 @@ lambda_df <- data.frame(
   lambda = annual_lambdas,
   log_lambda = log(annual_lambdas)
 )
+
+
