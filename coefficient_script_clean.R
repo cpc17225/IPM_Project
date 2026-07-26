@@ -34,9 +34,9 @@ plot(simulateResiduals(model_growth_comp))
 
 nu <- as.numeric(family_params(model_growth_comp))
 print(nu)
-#df = 6.460343 < 30  => that t_distribution is a better fit and
+#df = 6.460343 < 30  => t_distribution is a better fit and
 #data has leptokurtosis
-#have to implement t-disribution into growth kernel
+#have to implement t-distribution into growth kernel
 
 
 
@@ -135,10 +135,10 @@ recruit_climate <- recruits %>%
   left_join(climate_lagged, by = "Year")
 
 #recruit size distribution model
-model_recruit_size <- lm(first_size_comp ~ snowmelt_lag0 + snowmelt_lag1,
+model_recruit_size <- lm(first_size_comp ~ scale(snowmelt_lag0) + scale(snowmelt_lag1),
                               data = recruit_climate)
 summary(model_recruit_size)
-#checked for nonconstant variance and normality of residuals, no issues found
+#checked for non-constant variance and normality of residuals, no issues found
 #correlation between snowmelt and snowmelt with lag of t=1 is low
 cor(climate_lagged$snowmelt_lag0, climate_lagged$snowmelt_lag1, use = "complete.obs")
 plot(model_recruit_size)
@@ -147,11 +147,26 @@ plot(model_recruit_size)
 recruits_mean <- mean(recruits$first_size_comp)
 recruits_sd <- sd(recruits$first_size_comp)
 
-#cofficients for recruit distribution with climate
-f1_int <- coef(model_recruit_size)["(Intercept)"]
-f1_sm0 <- coef(model_recruit_size)["snowmelt_lag0"]
-f1_sm1 <- coef(model_recruit_size)["snowmelt_lag1"]
-f1_sd <- summary(model_recruit_size)$sigma
+#coefficients for recruit distribution with climate
+recruits_int_c <- coef(model_recruit_size)["(Intercept)"]
+recruits_slope_sm0 <- coef(model_recruit_size)["scale(snowmelt_lag0)"]
+recruits_slope_sm1 <- coef(model_recruit_size)["scale(snowmelt_lag1)"]
+recruits_sd_c <- summary(model_recruit_size)$sigma
+
+
+
+### Survival coefficients----
+
+#cannot estimate seedling survival
+#can estimate survival from seedling -> recruit bank
+#using true seedlings from recruit analysis
+
+recruit_survival <- predict(
+  model_surv_comp,
+  newdata = data.frame(comp_size = mu_z0),
+  type = "response"
+)
+
 
 
 
@@ -170,6 +185,13 @@ rep_cond  <- fixef(model_rep_comp)$cond
 
 #flower parameters
 flow_cond <- fixef(model_flower_comp)$cond
+
+#climate data for ipmr
+ipm_climate_data <- Climate_data %>% 
+  filter(Year >=1979) %>% 
+  mutate(scaled_snowmelt = scale(snowmelt)) %>% 
+  mutate(scaled_snowpack = scale(snowpack))
+
 
 #compile into the master list for ipmr
 ipmr_params_comp <- list(
@@ -202,10 +224,14 @@ ipmr_params_comp <- list(
   
   #Survival for seedlings/juveniles
   s_SB = 0.75,
-  s1 = 0.75*0.75,
+  s1 = recruit_survival,
   
   #Number of seeds
-  num_seeds = 300
+  num_seeds = 300,
+  
+  #Mean climate
+  snowmelt_mean  = mean(ipm_climate_data$scaled_snowmelt),
+  snowpack_mean = mean(ipm_climate_data$scaled_snowpack)
 )
 
-saveRDS(ipmr_params, file = "ipmr_parms.RDS")
+saveRDS(ipmr_params_comp, file = "ipmr_parms_comp.RDS")
