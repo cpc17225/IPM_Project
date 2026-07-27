@@ -2,6 +2,7 @@
 
 library(tidyverse)
 library(readxl)
+library(readr)
 
 Grandiflora_Cleaned <- read_excel("Grandiflora_Cleaned.xlsx", na = "NA")
 Climate_Data <- read_csv("C:/Users/Owner/Downloads/barr_snowmelt_date_2022.csv")
@@ -108,13 +109,26 @@ rep_data <- clean_data %>%
 saveRDS(rep_data, file = "Tg_rep.rds")
 
 
+
+### Temperature values to climate data----
+temp_data <- read_csv("phensyn_weather_2022.csv")
+Climate_data_temp <- Climate_Data %>% 
+  left_join(temp_data, by = "year")
+
+
 ### Combining demographic and climatic data----
 
-Climate_Data <- Climate_Data %>% 
-  rename("Year" = "year")
+#Fixing case of year and removing unnecessary columns
+Climate_Data_fix <- Climate_data_temp %>% 
+  rename("Year" = "year") %>% 
+  select(-c(snowmelt.doy, snow.year.x, snow.year.y,
+            fall.precip.mm.cb, fall.weather.n,
+            summer.precip.mm.cb, summer.weather.n, 
+            spring.weather.n,
+            winterspring.precip, winter.weather.n))
 
 full_data <- clean_data %>% 
-  left_join(Climate_Data, by = "Year")
+  left_join(Climate_Data_fix, by = "Year")
 
 saveRDS(full_data, file = "full_data.rds")
 
@@ -141,20 +155,30 @@ add_climate_lag <- function(data, climate, time) {
 }
 
 # Build up all lags in one dataset
-Tg_climate <- clean_data
+Tg_climate_lag <- clean_data
 for(i in 0:4){
-  Tg_climate <- add_climate_lag(Tg_climate, Climate_Data, i)
+  Tg_climate_lag <- add_climate_lag(Tg_climate_lag, Climate_Data_fix, i)
 }
 
 # Adding z-scores for snowpack
-Tg_climate <- Tg_climate %>% 
+Tg_climate_lag <- Tg_climate_lag %>% 
   mutate(snowpack0_z = c(scale(snowpack_lag0))) %>% 
   mutate(snowpack1_z = c(scale(snowpack_lag1))) %>% 
   mutate(snowpack2_z = c(scale(snowpack_lag2))) %>% 
   mutate(snowpack3_z = c(scale(snowpack_lag3))) %>% 
-  mutate(snowpack4_z = c(scale(snowpack_lag4)))
+  mutate(snowpack4_z = c(scale(snowpack_lag4))) %>%
+  mutate(snowmelt0_z = c(scale(snowmelt_lag0))) %>% 
+  mutate(snowmelt1_z = c(scale(snowmelt_lag1))) %>% 
+  mutate(snowmelt2_z = c(scale(snowmelt_lag2))) %>% 
+  mutate(snowmelt3_z = c(scale(snowmelt_lag3))) %>% 
+  mutate(snowmelt4_z = c(scale(snowmelt_lag4)))
 
-saveRDS(Tg_climate, file = "Tg_climate_rds.rds")
+Tg_climate_clean <- Tg_climate_lag %>% 
+  select(-c(Comments, logLLL, scaled_sqrt_num_leaves, scaled_sqrt_numleavesprev,
+            scaled_LLL, scaled_LLLprev))
+
+
+saveRDS(Tg_climate_clean, file = "Tg_climate_rds.rds")
 
 #Reproductive Tg_climate
 Tg_climate_rep <- Tg_climate %>% 
@@ -179,10 +203,10 @@ add_climate_lag_yr <- function(data, climate, time) {
   return(temp)
 }
 
-# 1. Start with a copy of your base data
+# Start with a copy of your base data
 climate_data_with_lag <- Climate_Data
 
-# 2. Loop through lags 0 to 4 and update climate_data_with_lag sequentially
+# Loop through lags 0 to 4 and update climate_data_with_lag sequentially
 for (i in 0:4) {
   climate_data_with_lag <- add_climate_lag(
     data = climate_data_with_lag, 
