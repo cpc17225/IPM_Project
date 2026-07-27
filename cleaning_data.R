@@ -177,8 +177,24 @@ Tg_climate_clean <- Tg_climate_lag %>%
   select(-c(Comments, logLLL, scaled_sqrt_num_leaves, scaled_sqrt_numleavesprev,
             scaled_LLL, scaled_LLLprev))
 
-
 saveRDS(Tg_climate_clean, file = "Tg_climate_rds.rds")
+
+Tg_data_climate_clean <- Tg_climate_clean %>% 
+  #dropping na for dredge
+  drop_na(
+    survival, comp_size,
+    starts_with("spring.mean.temp_lag"),
+    starts_with("summer.mean.temp_lag"),
+    starts_with("snowpack_lag")
+  ) %>% 
+  # Pre-scale climate variables (converts them to z-scores)
+  mutate(
+    across(starts_with("spring.mean.temp_lag"), ~ as.numeric(scale(.))),
+    across(starts_with("summer.mean.temp_lag"), ~ as.numeric(scale(.))),
+    across(starts_with("snowpack_lag"),         ~ as.numeric(scale(.)))
+  )
+
+saveRDS(Tg_data_climate_clean, file = "Tg_climate_clean_scale.rds")
 
 #Reproductive Tg_climate
 Tg_climate_rep <- Tg_climate %>% 
