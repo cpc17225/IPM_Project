@@ -7,17 +7,33 @@ library(readr)
 
 Tg_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_data.rds")
 Tg_rep <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_rep.rds")
-Climate_data <- read_csv("C:/Users/Owner/Downloads/barr_snowmelt_date_2022.csv")
+Climate_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Climate_data_temp.rds")
 Climate_data <- Climate_data %>% 
   rename("Year" = year)
+Tg_Climate <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_climate_clean_scale_full_data.rds")
+Tg_Climate_Flower <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_climate_clean_scale_flower_data.rds")
+
+#climate data for ipmr
+ipm_climate_data <- Climate_data %>% 
+  filter(Year >=1979) %>% 
+  mutate(scaled_snowmelt = scale(snowmelt)) %>% 
+  mutate(scaled_snowpack = scale(snowpack)) %>% 
+  mutate(scaled_summer_temp = scale(summer.mean.temp)) %>% 
+  mutate(scaled_spring_temp = scale(spring.mean.temp))
+
 
 
 ### Survival analysis----
-model_surv_comp <- glmmTMB(survival ~ comp_size + I(comp_size^2),
+#model selection from dredging
+model_surv_comp <- glmmTMB(survival ~ comp_size + I(comp_size^2) +
+                           snowpack_lag3 + spring.mean.temp_lag4 + summer.mean.temp_lag1,
                            family = binomial,
-                           data = Tg_data)
+                           data = Tg_Climate,
+                           na.action = na.omit)
 summary(model_surv_comp)
 plot(simulateResiduals(model_surv_comp))
+
+
 
 ggplot(Tg_data, aes(x = comp_size, y = survival)) +
   geom_smooth(method = "glm", method.args = list(family = "binomial"), formula = y ~ poly(x,2))
@@ -25,10 +41,12 @@ ggplot(Tg_data, aes(x = comp_size, y = survival)) +
 
 
 ### Growth analysis----
-model_growth_comp <- glmmTMB(comp_size ~ comp_size_prev,
+model_growth_comp <- glmmTMB(comp_size ~ comp_size_prev +
+                               spring.mean.temp_lag1 + spring.mean.temp_lag2 + summer.mean.temp_lag2,
                              dispformula = ~ comp_size_prev,
                              family = t_family(link = "identity"),
-                             data = Tg_data)
+                             data = Tg_Climate,
+                             na.action = na.omit)
 summary(model_growth_comp)
 plot(simulateResiduals(model_growth_comp))
 
@@ -41,10 +59,13 @@ print(nu)
 
 
 ### Reproductive analysis----
-model_rep_comp <- glmmTMB(rep ~ comp_size_prev,
+model_rep_comp <- glmmTMB(rep ~ comp_size_prev +
+                            snowpack_lag4 + summer.mean.temp_lag0 + spring.mean.temp_lag0,
                           family = binomial,
-                          data = Tg_data)
+                          data = Tg_Climate,
+                          na.action = na.omit)
 summary(model_rep_comp)
+plot(simulateResiduals(model_rep_comp))
 
 ggplot(Tg_data, aes(x = comp_size_prev, y = rep)) + 
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
@@ -54,7 +75,8 @@ ggplot(Tg_data, aes(x = comp_size_prev, y = rep)) +
 ### Flower analysis----
 model_flower_comp <- glmmTMB(NumFlowers ~ comp_size_prev,
                              family = poisson,
-                             data = Tg_rep)
+                             data = Tg_Climate_Flower,
+                             na.action = na.omit)
 summary(model_flower_comp)
 plot(simulateResiduals(model_flower_comp))
 diagnose(model_flower_comp)
@@ -163,7 +185,10 @@ recruits_sd_c <- summary(model_recruit_size)$sigma
 
 recruit_survival <- predict(
   model_surv_comp,
-  newdata = data.frame(comp_size = mu_z0),
+  newdata = data.frame(comp_size = mu_z0,
+                       snowpack_lag3 = 0,
+                       spring.mean.temp_lag4 = 0,
+                       summer.mean.temp_lag1 = 0),
   type = "response"
 )
 
@@ -186,52 +211,59 @@ rep_cond  <- fixef(model_rep_comp)$cond
 #flower parameters
 flow_cond <- fixef(model_flower_comp)$cond
 
-#climate data for ipmr
-ipm_climate_data <- Climate_data %>% 
-  filter(Year >=1979) %>% 
-  mutate(scaled_snowmelt = scale(snowmelt)) %>% 
-  mutate(scaled_snowpack = scale(snowpack))
 
 
 #compile into the master list for ipmr
 ipmr_params_comp <- list(
-  # Growth
-  g_int      = as.numeric(grow_cond["(Intercept)"]),
-  g_slope    = as.numeric(grow_cond["comp_size_prev"]),
-  d_int      = as.numeric(grow_disp["(Intercept)"]),
-  d_slope    = as.numeric(grow_disp["comp_size_prev"]),
-  t_df       = as.numeric(grow_df),
+  # Growth (Student-t with size-dependent dispersion)
+  g_int        = as.numeric(grow_cond["(Intercept)"]),
+  g_slope      = as.numeric(grow_cond["comp_size_prev"]),
+  g_spr_lag1   = as.numeric(grow_cond["spring.mean.temp_lag1"]),
+  g_spr_lag2   = as.numeric(grow_cond["spring.mean.temp_lag2"]),
+  g_sum_lag2   = as.numeric(grow_cond["summer.mean.temp_lag2"]),
+  
+  d_int        = as.numeric(grow_disp["(Intercept)"]),
+  d_slope      = as.numeric(grow_disp["comp_size_prev"]),
+  t_df         = as.numeric(grow_df),
   
   # Survival
-  s_int      = as.numeric(surv_cond["(Intercept)"]),
-  s_slope    = as.numeric(surv_cond["comp_size"]),
-  s_quad     = as.numeric(surv_cond["I(comp_size^2)"]),
+  s_int        = as.numeric(surv_cond["(Intercept)"]),
+  s_slope      = as.numeric(surv_cond["comp_size"]),
+  s_quad       = as.numeric(surv_cond["I(comp_size^2)"]),
+  s_snw_lag3   = as.numeric(surv_cond["snowpack_lag3"]),
+  s_spr_lag4   = as.numeric(surv_cond["spring.mean.temp_lag4"]),
+  s_sum_lag1   = as.numeric(surv_cond["summer.mean.temp_lag1"]),
   
   # Probability of Reproduction
-  r_int      = as.numeric(rep_cond["(Intercept)"]),
-  r_slope    = as.numeric(rep_cond["comp_size_prev"]),
+  r_int        = as.numeric(rep_cond["(Intercept)"]),
+  r_slope      = as.numeric(rep_cond["comp_size_prev"]),
+  r_snw_lag4   = as.numeric(rep_cond["snowpack_lag4"]),
+  r_sum_lag0   = as.numeric(rep_cond["summer.mean.temp_lag0"]),
+  r_spr_lag0   = as.numeric(rep_cond["spring.mean.temp_lag0"]),
   
   # Number of Flowers
-  f_int      = as.numeric(flow_cond["(Intercept)"]),
-  f_slope    = as.numeric(flow_cond["comp_size_prev"]),
+  f_int        = as.numeric(flow_cond["(Intercept)"]),
+  f_slope      = as.numeric(flow_cond["comp_size_prev"]),
   
-  #Germination (estimation),
-  g_est = 0.02,
+  # Germination (estimation)
+  g_est        = 0.02,
   
-  #Size distribution for recruits
-  f1_mean = recruits_mean,
-  f1_sd = recruits_sd,
+  # Size distribution for recruits
+  f1_mean      = recruits_mean,
+  f1_sd        = recruits_sd,
   
-  #Survival for seedlings/juveniles
-  s_SB = 0.75,
-  s1 = recruit_survival,
+  # Survival for seedlings/juveniles
+  s_SB         = 0.75,
+  s1           = recruit_survival,
   
-  #Number of seeds
-  num_seeds = 300,
+  # Number of seeds
+  num_seeds    = 300,
   
-  #Mean climate
-  snowmelt_mean  = mean(ipm_climate_data$scaled_snowmelt),
-  snowpack_mean = mean(ipm_climate_data$scaled_snowpack)
+  # Mean climate (0 since variables scaled)
+  snowmelt_mean  = 0,
+  snowpack_mean = 0,
+  summer_temp_mean = 0,
+  spring_temp_mean = 0
 )
 
 saveRDS(ipmr_params_comp, file = "ipmr_parms_comp.RDS")

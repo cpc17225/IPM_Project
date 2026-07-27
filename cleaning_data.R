@@ -115,6 +115,8 @@ temp_data <- read_csv("phensyn_weather_2022.csv")
 Climate_data_temp <- Climate_Data %>% 
   left_join(temp_data, by = "year")
 
+saveRDS(Climate_data_temp, file = "Climate_data_temp.rds")
+
 
 ### Combining demographic and climatic data----
 
@@ -160,18 +162,6 @@ for(i in 0:4){
   Tg_climate_lag <- add_climate_lag(Tg_climate_lag, Climate_Data_fix, i)
 }
 
-# Adding z-scores for snowpack
-Tg_climate_lag <- Tg_climate_lag %>% 
-  mutate(snowpack0_z = c(scale(snowpack_lag0))) %>% 
-  mutate(snowpack1_z = c(scale(snowpack_lag1))) %>% 
-  mutate(snowpack2_z = c(scale(snowpack_lag2))) %>% 
-  mutate(snowpack3_z = c(scale(snowpack_lag3))) %>% 
-  mutate(snowpack4_z = c(scale(snowpack_lag4))) %>%
-  mutate(snowmelt0_z = c(scale(snowmelt_lag0))) %>% 
-  mutate(snowmelt1_z = c(scale(snowmelt_lag1))) %>% 
-  mutate(snowmelt2_z = c(scale(snowmelt_lag2))) %>% 
-  mutate(snowmelt3_z = c(scale(snowmelt_lag3))) %>% 
-  mutate(snowmelt4_z = c(scale(snowmelt_lag4)))
 
 Tg_climate_clean <- Tg_climate_lag %>% 
   select(-c(Comments, logLLL, scaled_sqrt_num_leaves, scaled_sqrt_numleavesprev,
@@ -193,15 +183,49 @@ Tg_data_climate_clean <- Tg_climate_clean %>%
     across(starts_with("summer.mean.temp_lag"), ~ as.numeric(scale(.))),
     across(starts_with("snowpack_lag"),         ~ as.numeric(scale(.)))
   )
-
 saveRDS(Tg_data_climate_clean, file = "Tg_climate_clean_scale.rds")
 
+
+Tg_data_climate_clean_rep <- Tg_climate_clean %>% 
+  drop_na(
+    survival, comp_size_prev,
+    starts_with("spring.mean.temp_lag"),
+    starts_with("summer.mean.temp_lag"),
+    starts_with("snowpack_lag")
+  ) %>% 
+  # Pre-scale climate variables (converts them to z-scores)
+  mutate(
+    across(starts_with("spring.mean.temp_lag"), ~ as.numeric(scale(.))),
+    across(starts_with("summer.mean.temp_lag"), ~ as.numeric(scale(.))),
+    across(starts_with("snowpack_lag"),         ~ as.numeric(scale(.)))
+  )
+saveRDS(Tg_data_climate_clean_rep, file = "Tg_climate_clean_scale_rep.rds")
+
+
+
 #Reproductive Tg_climate
-Tg_climate_rep <- Tg_climate %>% 
+Tg_climate_rep <- Tg_climate_clean %>% 
   filter(NumFlowers>0)
 
 saveRDS(Tg_climate_rep, file = "Tg_climate_rep_rds.rds")
 
+
+### Full dataset for coefficient extraction----
+Tg_data_climate_full_data <- Tg_climate_clean %>% 
+  # Pre-scale climate variables (converts them to z-scores)
+  mutate(
+    across(starts_with("spring.mean.temp_lag"), ~ as.numeric(scale(.))),
+    across(starts_with("summer.mean.temp_lag"), ~ as.numeric(scale(.))),
+    across(starts_with("snowpack_lag"),         ~ as.numeric(scale(.)))
+  )
+saveRDS(Tg_data_climate_full_data, file = "Tg_climate_clean_scale_full_data.rds")
+
+
+
+### Flowering dataset for coefficient extraction----
+Tg_data_climate_flower_data <- Tg_data_climate_full_data %>% 
+  filter(rep==1)
+saveRDS(Tg_data_climate_flower_data, file = "Tg_climate_clean_scale_flower_data.rds")
 
 
 ### Lagged climate years----
