@@ -4,6 +4,8 @@ library(glmmTMB)
 library(DHARMa)
 library(tidyverse)
 library(readr)
+library(performance)
+
 
 Tg_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_data.rds")
 Tg_rep <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_rep.rds")
@@ -32,7 +34,7 @@ model_surv_comp <- glmmTMB(survival ~ comp_size + I(comp_size^2) +
                            na.action = na.omit)
 summary(model_surv_comp)
 plot(simulateResiduals(model_surv_comp))
-
+check_collinearity(model_surv_comp)
 
 
 ggplot(Tg_data, aes(x = comp_size, y = survival)) +
@@ -49,12 +51,17 @@ model_growth_comp <- glmmTMB(comp_size ~ comp_size_prev +
                              na.action = na.omit)
 summary(model_growth_comp)
 plot(simulateResiduals(model_growth_comp))
+check_collinearity(model_growth_comp)
 
 nu <- as.numeric(family_params(model_growth_comp))
 print(nu)
 #df = 6.460343 < 30  => t_distribution is a better fit and
 #data has leptokurtosis
 #have to implement t-distribution into growth kernel
+
+ggplot(Tg_Climate, aes(x = comp_size_prev, y = comp_size)) +
+  geom_point()
+
 
 
 
@@ -66,6 +73,8 @@ model_rep_comp <- glmmTMB(rep ~ comp_size_prev +
                           na.action = na.omit)
 summary(model_rep_comp)
 plot(simulateResiduals(model_rep_comp))
+check_collinearity(model_rep_comp)
+
 
 ggplot(Tg_data, aes(x = comp_size_prev, y = rep)) + 
   geom_smooth(method = "glm", method.args = list(family = "binomial"))
@@ -79,7 +88,6 @@ model_flower_comp <- glmmTMB(NumFlowers ~ comp_size_prev,
                              na.action = na.omit)
 summary(model_flower_comp)
 plot(simulateResiduals(model_flower_comp))
-diagnose(model_flower_comp)
 
 ggplot(Tg_rep, aes(x = comp_size_prev, y = NumFlowers))+
   geom_point()
@@ -249,8 +257,10 @@ ipmr_params_comp <- list(
   g_est        = 0.02,
   
   # Size distribution for recruits
-  f1_mean      = recruits_mean,
-  f1_sd        = recruits_sd,
+  rec_int_c =    coef(model_recruit_size)["(Intercept)"],
+  rec_slope_sm0 = coef(model_recruit_size)["scale(snowmelt_lag0)"],
+  rec_slope_sm1 = coef(model_recruit_size)["scale(snowmelt_lag1)"],
+  rec_sd_c <- summary(model_recruit_size)$sigma,
   
   # Survival for seedlings/juveniles
   s_SB         = 0.75,
@@ -260,10 +270,10 @@ ipmr_params_comp <- list(
   num_seeds    = 300,
   
   # Mean climate (0 since variables scaled)
-  snowmelt_mean  = 0,
-  snowpack_mean = 0,
-  summer_temp_mean = 0,
-  spring_temp_mean = 0
+  snowmelt_mean_yr  = rep(0, 47),
+  snowpack_mean_yr = rep(0,47),
+  summer_temp_mean_yr = rep(0,47),
+  spring_temp_mean_yr = rep(0,47)
 )
 
 saveRDS(ipmr_params_comp, file = "ipmr_parms_comp.RDS")
