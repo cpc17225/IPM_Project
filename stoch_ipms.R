@@ -647,15 +647,143 @@ for (p in params_to_test) {
 
 elasticity_results_climate$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
                                            "Seedling Survival", "Germination Rate", "Number of seeds")
+
+
+
+
+#early climate IPM
+run_clim_pre_ipm <- function(modified_parms) {
+  
+  set.seed(42)
+  
+  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
+                       det_stoch = "stoch", kern_param = "kern") %>%
+    
+    # P Kernel (Survival & Growth)
+    define_kernel(name = "P_yr", family = "CC",
+                  formula = s * G * (1-pf) * d_compsize,
+                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
+                               s_snw_lag3 * sp_surv_yr +
+                               s_spr_lag4 * spt_surv_yr +
+                               s_sum_lag1 * sut_surv_yr),
+                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
+                  mu_g = g_int + g_slope*compsize_1 +
+                    g_spr_lag1 * spt1_grow_yr +
+                    g_spr_lag2 * spt2_grow_yr +
+                    g_sum_lag2 * sut_grow_yr,
+                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * sp_rep_yr +
+                                r_sum_lag0 * sut_rep_yr +
+                                r_spr_lag0 * spt_rep_yr),
+                  data_list = modified_parms,
+                  states = list(c("compsize")),
+                  evict_cor = TRUE,
+                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Fecundity Kernel
+    define_kernel(name = "Fe_yr", family = "CD",
+                  formula = pf * fs * num_seeds * g_est * s_SB,
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * sp_rep_yr +
+                                r_sum_lag0 * sut_rep_yr +
+                                r_spr_lag0 * spt_rep_yr),
+                  fs = exp(f_int + f_slope*compsize_1),
+                  data_list = modified_parms,
+                  states = list(c("compsize", "RB")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Recruit Bank Kernel
+    define_kernel(name = "RB_yr", family = "DC",
+                  formula = s1 * f1_dist * d_compsize,
+                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
+                  mu_f1 = rec_int_c +
+                    rec_slope_sm0 * sm0_rec_yr +
+                    rec_slope_sm1 * sm1_rec_yr,
+                  sd_f1 = rec_sd_c,
+                  data_list = modified_parms,
+                  states = list(c("RB", "compsize")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Where kernels go
+    define_impl(make_impl_args_list(
+      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
+      int_rule = rep("midpoint", 3),
+      state_start = c("compsize", "compsize", "RB"),
+      state_end = c("compsize", "RB", "compsize")
+    )) %>%
+    define_domains(compsize = c(L, U, 100)) %>%
+    define_pop_state(pop_vectors = list(n_compsize = initial_size, n_RB = 10)) %>%
+    
+    # Run the model
+    make_ipm(iterations = 200,
+             kernel_seq = sample(1:17, size = 200, replace = TRUE),
+             usr_funs = list(dt_scaled = dt_scaled,
+                             pt_scaled = pt_scaled))
+  
+  #return the asymptotic lambda
+  annual_lambdas <- temp_ipm$pop_state$lambda
+  stoch_lambda <- exp(mean(log(annual_lambdas)))
+  
+  return(stoch_lambda)
+}
+
+
+baseline_lambda_pre_climate <- run_clim_pre_ipm(ipm_parms_clim)
+
+#tested parameters
+params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
+elasticity_results_pre_climate <- data.frame(Parameter = character(), 
+                                         New_Lambda = numeric(), 
+                                         Elasticity = numeric())
+
+
+#loop to calculate elasticity
+for (p in params_to_test) {
+  
+  #baseline parameters
+  test_parms <- ipm_parms_clim
+  
+  #perturb parameter by 5%
+  perturbation <- test_parms[[p]] * 0.05
+  test_parms[[p]] <- test_parms[[p]] + perturbation
+  
+  #run the model with the tweaked parameter
+  new_lambda <- run_clim_pre_ipm(test_parms)
+  
+  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
+  elas <- ((new_lambda - baseline_lambda_pre_climate) / baseline_lambda_pre_climate) / 0.05
+  
+  #store results
+  elasticity_results_pre_climate <- rbind(elasticity_results_pre_climate, 
+                                      data.frame(Parameter = p, 
+                                                 New_Lambda = new_lambda, 
+                                                 Elasticity = elas))
+}
+
+
+elasticity_results_pre_climate$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
+                                                   "Seedling Survival", "Germination Rate", "Number of seeds")
 df_null <- elasticity_results %>%
   mutate(Model = "Mean Climate (Null)")
 
 df_clim <- elasticity_results_climate %>%
   mutate(Model = "Stochastic Climate (1996-2025)")
 
-combined_elasticity <- bind_rows(df_null, df_clim)
+df_pre_clim <- elasticity_results_pre_climate %>% 
+  mutate(Model = "Stochastic Climate (1979-1995)")
+
+combined_elasticity <- bind_rows(df_null, df_clim, df_pre_clim)
 combined_elasticity$Model <- factor(combined_elasticity$Model, 
-                                    levels = c("Mean Climate (Null)", "Stochastic Climate (1996-2025)"))
+                                    levels = c("Mean Climate (Null)",
+                                               "Stochastic Climate (1996-2025)",
+                                               "Stochastic Climate (1979-1995)"))
 
 
 ggplot(combined_elasticity, aes(x = reorder(Biological_Process, Elasticity), y = Elasticity, fill = Model)) +
@@ -672,7 +800,8 @@ ggplot(combined_elasticity, aes(x = reorder(Biological_Process, Elasticity), y =
   coord_flip() +
   scale_y_continuous(expand = expansion(mult = c(0.18, 0.18))) +
   scale_fill_manual(values = c("Mean Climate (Null)" = "gray70", 
-                               "Stochastic Climate (1996-2025)" = "darkred")) +
+                               "Stochastic Climate (1996-2025)" = "darkred",
+                               "Stochastic Climate (1979-1995)" = "steelblue")) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.75) +
   theme_classic(base_size = 11) +
   labs(x = "Biological Process",
