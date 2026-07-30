@@ -254,26 +254,72 @@ ipmr_params_comp <- list(
   f_slope      = as.numeric(flow_cond["comp_size_prev"]),
   
   # Germination (estimation)
-  g_est        = 0.02,
+  g_est        = 0.01,
   
   # Size distribution for recruits
-  rec_int_c =    coef(model_recruit_size)["(Intercept)"],
-  rec_slope_sm0 = coef(model_recruit_size)["scale(snowmelt_lag0)"],
-  rec_slope_sm1 = coef(model_recruit_size)["scale(snowmelt_lag1)"],
-  rec_sd_c <- summary(model_recruit_size)$sigma,
+  rec_int_c =    as.numeric(coef(model_recruit_size)["(Intercept)"]),
+  rec_slope_sm0 = as.numeric(coef(model_recruit_size)["scale(snowmelt_lag0)"]),
+  rec_slope_sm1 = as.numeric(coef(model_recruit_size)["scale(snowmelt_lag1)"]),
+  rec_sd_c = as.numeric(summary(model_recruit_size)$sigma),
   
   # Survival for seedlings/juveniles
-  s_SB         = 0.75,
+  s_SB         = 0.4,
   s1           = recruit_survival,
   
   # Number of seeds
   num_seeds    = 300,
   
   # Mean climate (0 since variables scaled)
-  snowmelt_mean_yr  = rep(0, 47),
-  snowpack_mean_yr = rep(0,47),
-  summer_temp_mean_yr = rep(0,47),
-  spring_temp_mean_yr = rep(0,47)
+  snowmelt_mean  = 0,
+  snowpack_mean = 0,
+  summer_temp_mean = 0,
+  spring_temp_mean = 0
 )
 
 saveRDS(ipmr_params_comp, file = "ipmr_parms_comp.RDS")
+
+### Size variables----
+
+#omega variables
+
+L <- min(Tg_Climate$comp_size, na.rm = TRUE)
+#min size = -3.990192
+U <- max(Tg_Climate$comp_size, na.rm = TRUE)
+#max size = 6.025928
+
+
+
+
+#starting size variables
+Tg_data_1979 <- Tg_Climate %>% 
+  filter(Year == 1979) %>% 
+  pull(comp_size)
+
+#total population size in 1979 = 70 (should be hidden plants in recruit bank)
+
+n_mesh <- 100
+
+mesh_breaks <- seq(L, U, length.out = n_mesh + 1)
+
+emp_hist <- hist(Tg_data_1979, breaks = mesh_breaks, plot = FALSE)
+initial_size_vector <- emp_hist$counts
+
+saveRDS(initial_size_vector, file = "initial_size_vector.rds")
+
+
+
+#starting variables for 1996
+#pull the actual plant sizes from 1996
+sizes_1996 <- Tg_Climate %>% 
+  filter(Year == 1996) %>% 
+  pull(comp_size_prev) 
+
+#bin into your 100 IPM mesh points (using your existing mesh_breaks)
+emp_hist_1996 <- hist(sizes_1996, breaks = mesh_breaks, plot = FALSE)
+initial_size_vector_1996 <- emp_hist_1996$counts
+
+saveRDS(initial_size_vector_1996, file = "initial_size_vector_1996.rds")
+
+Tg_Climate %>% 
+  filter(Year == 1995) %>% 
+  pull(comp_size)

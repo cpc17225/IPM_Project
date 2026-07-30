@@ -290,10 +290,12 @@ ggplot(pop_size, aes(x = Year, y = logpop)) +
 
 #Getting lambda
 model_lambda <- lm(logpop ~ Year,
-                  data = pop_size[pop_size$Year>1988, ])
+                  data = pop_size[pop_size$Year>1995, ])
 summary(model_lambda)
+bounds <- confint(model_lambda, level = 0.95)
 lambda <- exp(coef(model_lambda)["Year"])
-#Lambda = 0.9412519
+lambda_bounds <- exp(bounds[2,])
+#Lambda = 0.9527436 
 plot(model_lambda)
 
 
@@ -362,10 +364,11 @@ ipmr_params <- list(
 
 saveRDS(ipmr_params, file = "ipmr_parms.RDS")
 
-ggplot(Tg_data, aes(x = sqrt(numleaves), y = log(LLL))) + 
-  geom_point()
+ggplot(Tg_data, aes(x = sqrt(numleaves), y = LLL)) + 
+  geom_point() +
+  ylim(0,175)
 
-plot(sqrt(Tg_data$numleaves), log(Tg_data$LLL))
+plot(sqrt(Tg_data$numleaves), Tg_data$LLL)
 points(sqrt(21), 44, col = 2, cex = 2)
 
      

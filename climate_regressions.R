@@ -36,7 +36,7 @@ surv_dredge <- dredge(
 head(surv_dredge, 10)
 best_surv_model <- get.models(surv_dredge, subset = 1)[[1]]
 summary(best_surv_model)
-check_collinearity(best_surv_mod)
+check_collinearity(best_surv_model)
 
 
 

@@ -10,7 +10,7 @@ ipm_parms_base <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/ipmr_pa
 climate_data_lag <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/climate_data_with_lag.rds")
 
 sp_surv_list <- as.list(climate_data_lag$snowpack_lag3)
-names(sp_surv_list) <- paste0("sp_surv_", 1:47)
+names(sp_surv_list) <- paste0("sp_surv_", 1:47)c
 
 sp_rep_list <- as.list(climate_data_lag$snowpack_lag4)
 names(sp_rep_list) <- paste0("sp_rep_", 1:47)

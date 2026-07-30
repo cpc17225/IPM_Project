@@ -42,40 +42,40 @@ clean_data <- clean_data %>%
 
 #Cases when numleaves is too high for a low LLL
 #Could be from herbivory or bad measurement
-clean_data[3285, "numleaves"] <- NA
-clean_data[3285, "LLL"] <- NA
-clean_data[3286, "numleavesprev"] <- NA
-clean_data[3287, "LLLprev"] <- NA
-clean_data[3131, "numleaves"] <- NA
-clean_data[3131, "LLL"] <- NA
-clean_data[3616, "numleaves"] <- NA
-clean_data[3616, "LLL"] <- NA
+clean_data[3284, "numleaves"] <- NA
+clean_data[3284, "LLL"] <- NA
+clean_data[3285, "numleavesprev"] <- NA
+clean_data[3285, "LLLprev"] <- NA
+clean_data[3129, "numleaves"] <- NA
+clean_data[3129, "LLL"] <- NA
+clean_data[3615, "numleaves"] <- NA
+clean_data[3615, "LLL"] <- NA
 clean_data[1015, "numleaves"] <- NA
 clean_data[1015, "LLL"] <- NA
 clean_data[1016, "numleavesprev"] <- NA
 clean_data[1016, "LLLprev"] <- NA
-clean_data[1484, "numleaves"] <- NA
-clean_data[1484, "LLL"] <- NA
+clean_data[1483, "numleaves"] <- NA
+clean_data[1483, "LLL"] <- NA
 clean_data[1485, "numleavesprev"] <- NA
 clean_data[1485, "LLLprev"] <- NA
-clean_data[2244, "numleaves"] <- NA
-clean_data[2244, "LLL"] <- NA
-clean_data[2245, "numleavesprev"] <- NA
-clean_data[2245, "LLLprev"] <- NA
+clean_data[2243, "numleaves"] <- NA
+clean_data[2243, "LLL"] <- NA
+clean_data[2244, "numleavesprev"] <- NA
+clean_data[2244, "LLLprev"] <- NA
 clean_data[2931, "numleaves"] <- NA
 clean_data[2931, "LLL"] <- NA
 clean_data[3030, "numleaves"] <- NA
 clean_data[3030, "LLL"] <- NA
 clean_data[3031, "numleavesprev"] <- NA
 clean_data[3031, "LLLprev"] <- NA
-clean_data[3143, "numleaves"] <- NA
-clean_data[3143, "LLL"] <- NA
+clean_data[3141, "numleaves"] <- NA
+clean_data[3141, "LLL"] <- NA
 
 #Case where LLL is too high given number of leaves
-clean_data[3606, "numleaves"] <- NA
-clean_data[3606, "LLL"] <- NA
-clean_data[3607, "numleavesprev"] <- NA
-clean_data[3607, "LLLPrev"] <- NA
+clean_data[3604, "numleaves"] <- NA
+clean_data[3604, "LLL"] <- NA
+clean_data[3605, "numleavesprev"] <- NA
+clean_data[3605, "LLLPrev"] <- NA
 
 
 
@@ -227,14 +227,16 @@ Tg_data_climate_flower_data <- Tg_data_climate_full_data %>%
   filter(rep==1)
 saveRDS(Tg_data_climate_flower_data, file = "Tg_climate_clean_scale_flower_data.rds")
 
+Climate_Data <- Climate_Data %>% 
+  rename(Year = year)
 
 ### Lagged climate years----
 add_climate_lag_yr <- function(data, climate, time) {
-  # Rename climate columns to indicate lag (excluding the join key 'Year')
+  #rename climate columns to indicate lag (excluding the join key 'Year')
   climate_lagged <- climate %>%
     rename_with(~ paste0(.x, "_lag", time), -Year)
   
-  # Shift: subtract time from Year so year t in data joins to year t-time climate
+  #shift: subtract time from Year so year t in data joins to year t-time climate
   temp <- data %>%
     mutate(Year_shifted = Year - time) %>%
     left_join(climate_lagged, by = c("Year_shifted" = "Year")) %>%
@@ -243,12 +245,12 @@ add_climate_lag_yr <- function(data, climate, time) {
   return(temp)
 }
 
-# Start with a copy of your base data
+# Start with a copy of base data
 climate_data_with_lag <- Climate_Data
 
 # Loop through lags 0 to 4 and update climate_data_with_lag sequentially
 for (i in 0:4) {
-  climate_data_with_lag <- add_climate_lag(
+  climate_data_with_lag <- add_climate_lag_yr(
     data = climate_data_with_lag, 
     climate = Climate_Data, 
     time = i
@@ -259,3 +261,4 @@ climate_data_with_lag <- climate_data_with_lag %>%
   filter(Year>=1979 & Year < 2026)
 
 saveRDS(climate_data_with_lag, file = "climate_data_with_lag.rds")
+
