@@ -3,6 +3,7 @@
 library(MuMIn)
 library(performance)
 library(glmmTMB)
+library(tidyverse)
 
 Tg_data_climate <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_climate_clean_scale.rds")
 Tg_data_climate_rep <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_climate_clean_scale_rep.rds")
@@ -166,3 +167,60 @@ head(flower_dredge, 10)
 
 #many models within delta AIC = 2
 #null model of no climate within this range => best model
+
+
+
+### Climate graph----
+
+climate_all_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/climate_full_data.rds")
+
+
+#long-style data
+climate_long <- climate_all_data %>%
+  select(Year, snowpack, snowmelt, spring.mean.temp, summer.mean.temp) %>%
+  pivot_longer(
+    cols = -Year,
+    names_to = "Variable",
+    values_to = "Z_score"
+  ) %>%
+  mutate(
+    Variable = factor(
+      Variable,
+      levels = c("snowpack", "snowmelt", "spring.mean.temp", "summer.mean.temp"),
+      labels = c("Snowpack Depth", "Snowmelt Date", "Spring Mean Temp", "Summer Mean Temp")
+    )
+  )
+
+#climate trends over time
+ggplot(climate_long, aes(x = Year, y = Z_score, color = Variable)) +
+  geom_line(alpha = 0.5, linewidth = 0.6) +
+  geom_point(alpha = 0.6, size = 1) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 1.1) +
+  geom_vline(xintercept = 1996, linetype = "dashed", color = "gray20", linewidth = 0.8) +
+  facet_wrap(~ Variable, ncol = 2, scales = "fixed") +
+  scale_color_manual(values = c(
+    "Snowpack Depth"   = "steelblue",
+    "Snowmelt Date"    = "gray40",
+    "Spring Mean Temp" = "forestgreen",
+    "Summer Mean Temp" = "#B2182B"
+  )) +
+  
+  scale_x_continuous(breaks = seq(1980, 2025, by = 10)) +
+  labs(
+    y = "Climate Covariate (z-score)",
+    x = "Year",
+  ) +
+  theme_classic(base_size = 11) +
+  theme(
+    legend.position = "none",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold", size = 11, hjust = 0),
+    panel.grid.major.y = element_line(color = "gray92", linewidth = 0.5)
+  )
+
+ggsave("Climate_trends.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)

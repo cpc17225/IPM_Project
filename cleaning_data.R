@@ -262,3 +262,17 @@ climate_data_with_lag <- climate_data_with_lag %>%
 
 saveRDS(climate_data_with_lag, file = "climate_data_with_lag.rds")
 
+
+
+
+
+Climate_full_data <- Climate_Data_fix %>% 
+  # Pre-scale climate variables (converts them to z-scores)
+  mutate(
+    across(starts_with("spring.mean.temp"), ~ as.numeric(scale(.))),
+    across(starts_with("summer.mean.temp"), ~ as.numeric(scale(.))),
+    across(starts_with("snowpack"),         ~ as.numeric(scale(.))),
+    across(starts_with("snowmelt"),         ~ as.numeric(scale(.)))
+  )
+
+saveRDS(Climate_full_data, file = "climate_full_data.rds")

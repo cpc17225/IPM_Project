@@ -37,8 +37,33 @@ plot(simulateResiduals(model_surv_comp))
 check_collinearity(model_surv_comp)
 
 
-ggplot(Tg_data, aes(x = comp_size, y = survival)) +
-  geom_smooth(method = "glm", method.args = list(family = "binomial"), formula = y ~ poly(x,2))
+ggplot(Tg_data) +
+  geom_smooth(aes(x = comp_size, y = survival, color = "Survival"),
+              method = "glm",
+              method.args = list(family = "binomial"),
+              formula = y ~ poly(x,2),
+              fullrange = FALSE,
+              linewidth = 1.2) +
+  geom_smooth(aes(x = comp_size_prev, y = rep, color = "Reproduction"),
+              method = "glm",
+              method.args = list(family = "binomial")) +
+  theme_classic(base_size = 11) +
+  labs(y = "Probability", x = "Composite size", color = "Vital Rate") +
+  scale_color_manual(values = c(
+    Survival = "firebrick",
+    Reproduction = "steelblue"
+  )) +
+  theme(legend.position = c(0.3, 0.4),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
+  
+
+ggsave("Survival_vital_rate.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)
 
 
 
@@ -149,6 +174,34 @@ cat("Maximum size after Year 1 (z1_max):", z1_max, "\n")
 #filtering to only recruits under max growth
 recruits <- first_appearance %>% 
   filter(first_size_comp<z1_max)
+
+full_recruit_data <- first_appearance %>% 
+  mutate(Classification = if_else(first_size_comp<z1_max, "Recruit", "Juvenile/Adult"))
+
+#histograms comparing first-detected and recruits
+ggplot(full_recruit_data, aes(x = first_size_comp, color = Classification, fill = Classification)) +
+  geom_histogram(binwidth = 0.2) +
+  scale_color_manual(values = c(
+    "Recruit" = "grey70",
+    "Juvenile/Adult" = "black"
+  )) + 
+  scale_fill_manual(values = c(
+    "Recruit" = "steelblue",
+    "Juvenile/Adult" = "grey50"
+  )) +
+  theme_minimal(base_size = 11) +
+  labs(x = "Composite Size", y = "Count") +
+  theme(panel.grid.minor = element_blank(),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
+
+ggsave("Recruits_distribution.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)
+
 
 #adding climate data
 #lagging climate data for a max of four years

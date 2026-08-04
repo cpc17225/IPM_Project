@@ -295,6 +295,14 @@ summary(model_lambda)
 bounds <- confint(model_lambda, level = 0.95)
 lambda <- exp(coef(model_lambda)["Year"])
 lambda_bounds <- exp(bounds[2,])
+
+model_lambda_inc <-lm(logpop ~ Year,
+                      data = pop_size[pop_size$Year<1996, ])
+summary(model_lambda_inc)
+lambda_inc <- exp(coef(model_lambda_inc)["Year"])
+bounds <- confint(model_lambda_inc, level = 0.95)
+lambda_inc_bounds <- exp(bounds[2,])
+
 #Lambda = 0.9527436 
 plot(model_lambda)
 

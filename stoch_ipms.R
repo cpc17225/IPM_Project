@@ -529,7 +529,7 @@ ggplot(elasticity_results, aes(x = reorder(Biological_Process, Elasticity), y = 
 
 
 
-#historic climate elasticities
+#historic climate elasticities from 1996-2025
 run_clim_ipm <- function(modified_parms) {
   
   set.seed(42)
@@ -785,6 +785,9 @@ combined_elasticity$Model <- factor(combined_elasticity$Model,
                                                "Stochastic Climate (1996-2025)",
                                                "Stochastic Climate (1979-1995)"))
 
+climate_elasticities <- bind_rows(df_clim, df_pre_clim)
+
+
 
 ggplot(combined_elasticity, aes(x = reorder(Biological_Process, Elasticity), y = Elasticity, fill = Model)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), color = "black", width = 0.7) +
@@ -814,6 +817,26 @@ ggplot(combined_elasticity, aes(x = reorder(Biological_Process, Elasticity), y =
   )
 
 ggsave("Elasticity_Figure_stochastic.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)
+
+
+climate_elasticity <- climate_elasticities %>% 
+  filter(Biological_Process == "Adult Survival")
+ggplot(climate_elasticity, aes(x = Model, y = Elasticity, fill = Model)) + 
+  geom_col(width = 0.6) +
+  theme_classic(base_size = 11) +
+  labs(y = "Survival Elasticity") +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c(
+    "Stochastic Climate (1979-1995)" = "steelblue",
+    "Stochastic Climate (1996-2025)" = "firebrick"
+  ))
+  
+ggsave("Survival_Elasticites.png", 
        plot = last_plot(), 
        width = 8.5, 
        height = 5.5, 
@@ -1002,6 +1025,25 @@ ggsave("Figure2_Population_Hindcasts.png",
        units = "in", 
        dpi = 300)
 
+
+ggplot(absolute_pop_clim_df, aes(x = Year, y = logN)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  theme_classic(base_size = 11) +
+  labs(y = "log[N(t)]") +
+  geom_vline(xintercept = 1996, linewidth = 0.8)
+
+ggsave("IPM_hindcast_climate.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)
+  
+
+
+
+
+
 all_lambda_df <- lambda_df_clim %>% 
   mutate(emp_lambda = emp_lambda[-48])
 
@@ -1037,6 +1079,5 @@ cor_clim_1996 = cor(all_lambda_1996_df$emp_lambda, all_lambda_1996_df$lamdba_cli
 print(paste("Climate Correlation (1996-):", cor_clim_1996))
 print(paste("Null Correlation (1996-):", cor_null_1996))
 print(paste("Climate Crash Correlation (1996-):", cor_crash_1996))
-
 
 
