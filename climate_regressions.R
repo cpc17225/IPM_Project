@@ -210,7 +210,7 @@ ggplot(climate_long, aes(x = Year, y = Z_score, color = Variable)) +
     y = "Climate Covariate (z-score)",
     x = "Year",
   ) +
-  theme_classic(base_size = 11) +
+  theme_classic(base_size = 13) +
   theme(
     legend.position = "none",
     strip.background = element_blank(),

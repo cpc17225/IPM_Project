@@ -82,7 +82,7 @@ ggplot(beta_plot, aes(x = climate_clean, y = vital_rate, fill = effect_dir)) +
     y = "Vital Rate",
     fill = "Climate Effect"
   ) +
-  theme_minimal(base_size = 11) +
+  theme_minimal(base_size = 13.5) +
   theme(
     panel.grid = element_blank(),
     axis.text.x = element_text(angle = 30, hjust = 1, color = "black", face = "bold"),
@@ -114,3 +114,10 @@ ggplot(survival_beta, aes(x = climate, y = Estimate, fill = climate)) +
   theme_classic(base_size = 11) +
   theme(legend.position = "none")
   
+
+ggsave("Survival_beta.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)

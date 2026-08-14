@@ -4,6 +4,7 @@ library(ipmr)
 library(tidyverse)
 library(Metrics)
 library(patchwork)
+library(mgcv)
 
 ipm_parms <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/ipmr_parms_comp.RDS")
 initial_size <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/initial_size_vector.RDS")
@@ -11,6 +12,8 @@ initial_size <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/initial_s
 ipm_parms$s_SB = 0.32
 
 ### Helper functions/variables----
+
+#used to help manage t-distributed growth
 dt_scaled <- function(x, mean, sd, df) {
   dt((x - mean) / sd, df = df) / sd
 }
@@ -379,7 +382,7 @@ ggplot(pop_size, aes(x = Year, y = logpop, color = Regime)) +
   scale_x_continuous(breaks = seq(1979, 2025, by = 5)) +
   labs(y = "log[N(t)] from empirical data",
        color = "Demographic Regime")+
-  theme_classic(base_size = 11)+
+  theme_classic(base_size = 15)+
   theme(legend.position = c(0.8, 0.85))
 
 ggsave("Figure1_Empirircal_Population.png", 
@@ -400,449 +403,6 @@ combined_pop <- data.frame(
 )
 
 
-### Elasticity----
-
-
-#null climate elasticities
-run_null_ipm <- function(modified_parms) {
-  
-  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
-                       det_stoch = "stoch", kern_param = "kern") %>%
-    
-    # P Kernel (Survival & Growth)
-    define_kernel(name = "P_yr", family = "CC",
-                  formula = s * G * (1-pf) * d_compsize,
-                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
-                               s_snw_lag3 * snowpack_mean +
-                               s_spr_lag4 * spring_temp_mean +
-                               s_sum_lag1 * summer_temp_mean),
-                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
-                  mu_g = g_int + g_slope*compsize_1 +
-                    g_spr_lag1 * spring_temp_mean +
-                    g_spr_lag2 * spring_temp_mean +
-                    g_sum_lag2 * summer_temp_mean,
-                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
-                  pf = plogis(r_int + r_slope*compsize_1 +
-                                r_snw_lag4 * snowpack_mean +
-                                r_sum_lag0 * summer_temp_mean +
-                                r_spr_lag0 * spring_temp_mean),
-                  data_list = modified_parms,
-                  states = list(c("compsize")),
-                  evict_cor = TRUE,
-                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Fecundity Kernel
-    define_kernel(name = "Fe_yr", family = "CD",
-                  formula = pf * fs * num_seeds * g_est * s_SB,
-                  pf = plogis(r_int + r_slope*compsize_1 +
-                                r_snw_lag4 * snowpack_mean +
-                                r_sum_lag0 * summer_temp_mean +
-                                r_spr_lag0 * spring_temp_mean),
-                  fs = exp(f_int + f_slope*compsize_1),
-                  data_list = modified_parms,
-                  states = list(c("compsize", "RB")),
-                  evict_cor = FALSE,
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Recruit Bank Kernel
-    define_kernel(name = "RB_yr", family = "DC",
-                  formula = s1 * f1_dist * d_compsize,
-                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
-                  mu_f1 = rec_int_c + rec_slope_sm0 * snowmelt_mean + rec_slope_sm1 * snowmelt_mean,
-                  sd_f1 = rec_sd_c,
-                  data_list = modified_parms,
-                  states = list(c("RB", "compsize")),
-                  evict_cor = FALSE,
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Where kernels go
-    define_impl(make_impl_args_list(
-      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
-      int_rule = rep("midpoint", 3),
-      state_start = c("compsize", "compsize", "RB"),
-      state_end = c("compsize", "RB", "compsize")
-    )) %>%
-    define_domains(compsize = c(L, U, 100)) %>%
-    define_pop_state(pop_vectors = list(n_compsize = runif(100), n_RB = 15)) %>%
-    
-    # Run the model
-    make_ipm(iterations = 150, # 150 is plenty for the null to reach asymptotic lambda
-             kernel_seq = sample(1:47, 150, replace = TRUE),
-             usr_funs = list(dt_scaled = dt_scaled, pt_scaled = pt_scaled))
-  
-  #return the asymptotic lambda
-  return(temp_ipm$pop_state$lambda[150]) 
-}
-
-#baseline lambda to calculate elasticity
-baseline_lambda <- run_null_ipm(ipm_parms)
-
-#tested parameters
-params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
-elasticity_results <- data.frame(Parameter = character(), 
-                                 New_Lambda = numeric(), 
-                                 Elasticity = numeric())
-
-#loop to calculate elasticity
-for (p in params_to_test) {
-  
-  #baseline parameters
-  test_parms <- ipm_parms
-  
-  #perturb parameter by 5%
-  perturbation <- test_parms[[p]] * 0.05
-  test_parms[[p]] <- test_parms[[p]] + perturbation
-  
-  #run the model with the tweaked parameter
-  new_lambda <- run_null_ipm(test_parms)
-  
-  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
-  elas <- ((new_lambda - baseline_lambda) / baseline_lambda) / 0.05
-  
-  #store results
-  elasticity_results <- rbind(elasticity_results, 
-                              data.frame(Parameter = p, 
-                                         New_Lambda = new_lambda, 
-                                         Elasticity = elas))
-}
-
-print(elasticity_results)
-
-elasticity_results$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
-                                           "Seedling Survival", "Germination Rate", "Number of seeds")
-
-#build null plot
-ggplot(elasticity_results, aes(x = reorder(Biological_Process, Elasticity), y = Elasticity)) +
-  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
-  coord_flip() +
-  theme_minimal(base_size = 15) +
-  labs(title = "Parametric Elasticity of T. grandiflora",
-       subtitle = "Proportional impact of a 5% increase in vital rates on Population Growth",
-       x = "Biological Process",
-       y = "Elasticity (Sensitivity of Lambda)") +
-  theme(plot.title = element_text(face = "bold"))
-
-
-
-
-#historic climate elasticities from 1996-2025
-run_clim_ipm <- function(modified_parms) {
-  
-  set.seed(42)
-  
-  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
-                       det_stoch = "stoch", kern_param = "kern") %>%
-    
-    # P Kernel (Survival & Growth)
-    define_kernel(name = "P_yr", family = "CC",
-                  formula = s * G * (1-pf) * d_compsize,
-                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
-                               s_snw_lag3 * sp_surv_yr +
-                               s_spr_lag4 * spt_surv_yr +
-                               s_sum_lag1 * sut_surv_yr),
-                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
-                  mu_g = g_int + g_slope*compsize_1 +
-                    g_spr_lag1 * spt1_grow_yr +
-                    g_spr_lag2 * spt2_grow_yr +
-                    g_sum_lag2 * sut_grow_yr,
-                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
-                  pf = plogis(r_int + r_slope*compsize_1 +
-                                r_snw_lag4 * sp_rep_yr +
-                                r_sum_lag0 * sut_rep_yr +
-                                r_spr_lag0 * spt_rep_yr),
-                  data_list = modified_parms,
-                  states = list(c("compsize")),
-                  evict_cor = TRUE,
-                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Fecundity Kernel
-    define_kernel(name = "Fe_yr", family = "CD",
-                  formula = pf * fs * num_seeds * g_est * s_SB,
-                  pf = plogis(r_int + r_slope*compsize_1 +
-                                r_snw_lag4 * sp_rep_yr +
-                                r_sum_lag0 * sut_rep_yr +
-                                r_spr_lag0 * spt_rep_yr),
-                  fs = exp(f_int + f_slope*compsize_1),
-                  data_list = modified_parms,
-                  states = list(c("compsize", "RB")),
-                  evict_cor = FALSE,
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Recruit Bank Kernel
-    define_kernel(name = "RB_yr", family = "DC",
-                  formula = s1 * f1_dist * d_compsize,
-                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
-                  mu_f1 = rec_int_c +
-                    rec_slope_sm0 * sm0_rec_yr +
-                    rec_slope_sm1 * sm1_rec_yr,
-                  sd_f1 = rec_sd_c,
-                  data_list = modified_parms,
-                  states = list(c("RB", "compsize")),
-                  evict_cor = FALSE,
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Where kernels go
-    define_impl(make_impl_args_list(
-      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
-      int_rule = rep("midpoint", 3),
-      state_start = c("compsize", "compsize", "RB"),
-      state_end = c("compsize", "RB", "compsize")
-    )) %>%
-    define_domains(compsize = c(L, U, 100)) %>%
-    define_pop_state(pop_vectors = list(n_compsize = initial_size, n_RB = 10)) %>%
-    
-    # Run the model
-    make_ipm(iterations = 200,
-             kernel_seq = sample(18:47, size = 200, replace = TRUE),
-             usr_funs = list(dt_scaled = dt_scaled,
-                             pt_scaled = pt_scaled))
-  
-  #return the asymptotic lambda
-  annual_lambdas <- temp_ipm$pop_state$lambda
-  stoch_lambda <- exp(mean(log(annual_lambdas)))
-  
-  return(stoch_lambda)
-}
-
-baseline_lambda_climate <- run_clim_ipm(ipm_parms_clim)
-
-#tested parameters
-params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
-elasticity_results_climate <- data.frame(Parameter = character(), 
-                                 New_Lambda = numeric(), 
-                                 Elasticity = numeric())
-
-
-#loop to calculate elasticity
-for (p in params_to_test) {
-  
-  #baseline parameters
-  test_parms <- ipm_parms_clim
-  
-  #perturb parameter by 5%
-  perturbation <- test_parms[[p]] * 0.05
-  test_parms[[p]] <- test_parms[[p]] + perturbation
-  
-  #run the model with the tweaked parameter
-  new_lambda <- run_clim_ipm(test_parms)
-  
-  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
-  elas <- ((new_lambda - baseline_lambda_climate) / baseline_lambda_climate) / 0.05
-  
-  #store results
-  elasticity_results_climate <- rbind(elasticity_results_climate, 
-                              data.frame(Parameter = p, 
-                                         New_Lambda = new_lambda, 
-                                         Elasticity = elas))
-}
-
-
-elasticity_results_climate$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
-                                           "Seedling Survival", "Germination Rate", "Number of seeds")
-
-
-
-
-#early climate IPM
-run_clim_pre_ipm <- function(modified_parms) {
-  
-  set.seed(42)
-  
-  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
-                       det_stoch = "stoch", kern_param = "kern") %>%
-    
-    # P Kernel (Survival & Growth)
-    define_kernel(name = "P_yr", family = "CC",
-                  formula = s * G * (1-pf) * d_compsize,
-                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
-                               s_snw_lag3 * sp_surv_yr +
-                               s_spr_lag4 * spt_surv_yr +
-                               s_sum_lag1 * sut_surv_yr),
-                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
-                  mu_g = g_int + g_slope*compsize_1 +
-                    g_spr_lag1 * spt1_grow_yr +
-                    g_spr_lag2 * spt2_grow_yr +
-                    g_sum_lag2 * sut_grow_yr,
-                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
-                  pf = plogis(r_int + r_slope*compsize_1 +
-                                r_snw_lag4 * sp_rep_yr +
-                                r_sum_lag0 * sut_rep_yr +
-                                r_spr_lag0 * spt_rep_yr),
-                  data_list = modified_parms,
-                  states = list(c("compsize")),
-                  evict_cor = TRUE,
-                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Fecundity Kernel
-    define_kernel(name = "Fe_yr", family = "CD",
-                  formula = pf * fs * num_seeds * g_est * s_SB,
-                  pf = plogis(r_int + r_slope*compsize_1 +
-                                r_snw_lag4 * sp_rep_yr +
-                                r_sum_lag0 * sut_rep_yr +
-                                r_spr_lag0 * spt_rep_yr),
-                  fs = exp(f_int + f_slope*compsize_1),
-                  data_list = modified_parms,
-                  states = list(c("compsize", "RB")),
-                  evict_cor = FALSE,
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Recruit Bank Kernel
-    define_kernel(name = "RB_yr", family = "DC",
-                  formula = s1 * f1_dist * d_compsize,
-                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
-                  mu_f1 = rec_int_c +
-                    rec_slope_sm0 * sm0_rec_yr +
-                    rec_slope_sm1 * sm1_rec_yr,
-                  sd_f1 = rec_sd_c,
-                  data_list = modified_parms,
-                  states = list(c("RB", "compsize")),
-                  evict_cor = FALSE,
-                  uses_par_sets = TRUE,
-                  par_set_indices = list(yr = 1:47)) %>%
-    
-    # Where kernels go
-    define_impl(make_impl_args_list(
-      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
-      int_rule = rep("midpoint", 3),
-      state_start = c("compsize", "compsize", "RB"),
-      state_end = c("compsize", "RB", "compsize")
-    )) %>%
-    define_domains(compsize = c(L, U, 100)) %>%
-    define_pop_state(pop_vectors = list(n_compsize = initial_size, n_RB = 10)) %>%
-    
-    # Run the model
-    make_ipm(iterations = 200,
-             kernel_seq = sample(1:17, size = 200, replace = TRUE),
-             usr_funs = list(dt_scaled = dt_scaled,
-                             pt_scaled = pt_scaled))
-  
-  #return the asymptotic lambda
-  annual_lambdas <- temp_ipm$pop_state$lambda
-  stoch_lambda <- exp(mean(log(annual_lambdas)))
-  
-  return(stoch_lambda)
-}
-
-
-baseline_lambda_pre_climate <- run_clim_pre_ipm(ipm_parms_clim)
-
-#tested parameters
-params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
-elasticity_results_pre_climate <- data.frame(Parameter = character(), 
-                                         New_Lambda = numeric(), 
-                                         Elasticity = numeric())
-
-
-#loop to calculate elasticity
-for (p in params_to_test) {
-  
-  #baseline parameters
-  test_parms <- ipm_parms_clim
-  
-  #perturb parameter by 5%
-  perturbation <- test_parms[[p]] * 0.05
-  test_parms[[p]] <- test_parms[[p]] + perturbation
-  
-  #run the model with the tweaked parameter
-  new_lambda <- run_clim_pre_ipm(test_parms)
-  
-  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
-  elas <- ((new_lambda - baseline_lambda_pre_climate) / baseline_lambda_pre_climate) / 0.05
-  
-  #store results
-  elasticity_results_pre_climate <- rbind(elasticity_results_pre_climate, 
-                                      data.frame(Parameter = p, 
-                                                 New_Lambda = new_lambda, 
-                                                 Elasticity = elas))
-}
-
-
-elasticity_results_pre_climate$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
-                                                   "Seedling Survival", "Germination Rate", "Number of seeds")
-df_null <- elasticity_results %>%
-  mutate(Model = "Mean Climate (Null)")
-
-df_clim <- elasticity_results_climate %>%
-  mutate(Model = "Stochastic Climate (1996-2025)")
-
-df_pre_clim <- elasticity_results_pre_climate %>% 
-  mutate(Model = "Stochastic Climate (1979-1995)")
-
-combined_elasticity <- bind_rows(df_null, df_clim, df_pre_clim)
-combined_elasticity$Model <- factor(combined_elasticity$Model, 
-                                    levels = c("Mean Climate (Null)",
-                                               "Stochastic Climate (1996-2025)",
-                                               "Stochastic Climate (1979-1995)"))
-
-climate_elasticities <- bind_rows(df_clim, df_pre_clim)
-
-
-
-ggplot(combined_elasticity, aes(x = reorder(Biological_Process, Elasticity), y = Elasticity, fill = Model)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.8), color = "black", width = 0.7) +
-  geom_text(
-    aes(
-      label = sprintf("%.3f", Elasticity),
-      hjust = ifelse(Elasticity >= 0, -0.2, 1.2)
-    ),
-    position = position_dodge(width = 0.8),
-    size = 3.2
-  ) +
-  
-  coord_flip() +
-  scale_y_continuous(expand = expansion(mult = c(0.18, 0.18))) +
-  scale_fill_manual(values = c("Mean Climate (Null)" = "gray70", 
-                               "Stochastic Climate (1996-2025)" = "darkred",
-                               "Stochastic Climate (1979-1995)" = "steelblue")) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.75) +
-  theme_classic(base_size = 11) +
-  labs(x = "Biological Process",
-       y = "Elasticity",
-       fill = "Model Type") +
-  theme(
-    legend.position = "bottom",
-    panel.grid.minor = element_blank(),
-    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0))
-  )
-
-ggsave("Elasticity_Figure_stochastic.png", 
-       plot = last_plot(), 
-       width = 8.5, 
-       height = 5.5, 
-       units = "in", 
-       dpi = 300)
-
-
-climate_elasticity <- climate_elasticities %>% 
-  filter(Biological_Process == "Adult Survival")
-ggplot(climate_elasticity, aes(x = Model, y = Elasticity, fill = Model)) + 
-  geom_col(width = 0.6) +
-  theme_classic(base_size = 11) +
-  labs(y = "Survival Elasticity") +
-  theme(legend.position = "none") +
-  scale_fill_manual(values = c(
-    "Stochastic Climate (1979-1995)" = "steelblue",
-    "Stochastic Climate (1996-2025)" = "firebrick"
-  ))
-  
-ggsave("Survival_Elasticites.png", 
-       plot = last_plot(), 
-       width = 8.5, 
-       height = 5.5, 
-       units = "in", 
-       dpi = 300)
-
 
 
 ### 1996-2026 IPM----
@@ -851,9 +411,9 @@ initial_size_1996 <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/init
 
 
 clim_stoch_ipm_1996 <- init_ipm(sim_gen = "general",
-                           di_dd = "di",
-                           det_stoch = "stoch",
-                           kern_param = "kern")
+                                di_dd = "di",
+                                det_stoch = "stoch",
+                                kern_param = "kern")
 
 
 ### Building kernels----
@@ -1012,7 +572,7 @@ ggplot(df_all, aes(x = Year)) +
     )
   ) +
   labs(y = "log[N(t)]") +
-  theme_classic(base_size = 11) +
+  theme_classic(base_size = 15) +
   theme(
     legend.position = "bottom",
     strip.background = element_blank(),
@@ -1038,7 +598,7 @@ ggsave("IPM_hindcast_climate.png",
        height = 5.5, 
        units = "in", 
        dpi = 300)
-  
+
 
 
 
@@ -1051,6 +611,12 @@ all_lambda_df <- lambda_df_clim %>%
 all_lambda_1996_df <- lambda_df_1996 %>% 
   mutate(emp_lambda = emp_lambda[-c(1:17, 48)])
 
+
+
+### Hindcast analysis----
+
+
+#RMSE shows climate IPM better predicts empirical population dynamics over null IPM
 #root mean square error for full data
 rmse_null <- Metrics::rmse(log(combined_pop$emp_pop), log(combined_pop$null_pop))
 rmse_clim <- Metrics::rmse(log(combined_pop$emp_pop), log(combined_pop$clim_pop))
@@ -1058,12 +624,16 @@ print(paste("Null RMSE:", rmse_null))
 print(paste("Climate RMSE:", rmse_clim))
 
 #correlation of lambda for full data
+#correlation results were not consistent with the rest of the results
+#null IPM might just be steadier and that's why it has better correlation with empirical lambda?
 cor_null = cor(all_lambda_df$emp_lambda, all_lambda_df$lamdba, method = "pearson")
 cor_clim = cor(all_lambda_df$emp_lambda, all_lambda_df$lamdba_clim, method = "pearson")
 print(paste("Climate Correlation:", cor_clim))
 print(paste("Null Correlation:", cor_null))
 
 #root mean square error for 1996 data
+#RMSE shows 1996-2026 IPM better predicts declining period
+#(just a shift down, all movements are the same)
 rmse_null_1996 <- Metrics::rmse(log(combined_pop_1996$emp_pop), log(combined_pop_1996$null_pop))
 rmse_clim_1996 <- Metrics::rmse(log(combined_pop_1996$emp_pop), log(combined_pop_1996$clim_pop))
 rmse_crash_1996 <- Metrics::rmse(log(combined_pop_1996$emp_pop), log(combined_pop_1996$crash_pop))
@@ -1081,3 +651,590 @@ print(paste("Null Correlation (1996-):", cor_null_1996))
 print(paste("Climate Crash Correlation (1996-):", cor_crash_1996))
 
 
+
+### Elasticity----
+
+
+#null climate elasticities
+run_null_ipm <- function(modified_parms) {
+  
+  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
+                       det_stoch = "stoch", kern_param = "kern") %>%
+    
+    # P Kernel (Survival & Growth)
+    define_kernel(name = "P_yr", family = "CC",
+                  formula = s * G * (1-pf) * d_compsize,
+                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
+                               s_snw_lag3 * snowpack_mean +
+                               s_spr_lag4 * spring_temp_mean +
+                               s_sum_lag1 * summer_temp_mean),
+                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
+                  mu_g = g_int + g_slope*compsize_1 +
+                    g_spr_lag1 * spring_temp_mean +
+                    g_spr_lag2 * spring_temp_mean +
+                    g_sum_lag2 * summer_temp_mean,
+                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * snowpack_mean +
+                                r_sum_lag0 * summer_temp_mean +
+                                r_spr_lag0 * spring_temp_mean),
+                  data_list = modified_parms,
+                  states = list(c("compsize")),
+                  evict_cor = TRUE,
+                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Fecundity Kernel
+    define_kernel(name = "Fe_yr", family = "CD",
+                  formula = pf * fs * num_seeds * g_est * s_SB,
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * snowpack_mean +
+                                r_sum_lag0 * summer_temp_mean +
+                                r_spr_lag0 * spring_temp_mean),
+                  fs = exp(f_int + f_slope*compsize_1),
+                  data_list = modified_parms,
+                  states = list(c("compsize", "RB")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Recruit Bank Kernel
+    define_kernel(name = "RB_yr", family = "DC",
+                  formula = s1 * f1_dist * d_compsize,
+                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
+                  mu_f1 = rec_int_c + rec_slope_sm0 * snowmelt_mean + rec_slope_sm1 * snowmelt_mean,
+                  sd_f1 = rec_sd_c,
+                  data_list = modified_parms,
+                  states = list(c("RB", "compsize")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Where kernels go
+    define_impl(make_impl_args_list(
+      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
+      int_rule = rep("midpoint", 3),
+      state_start = c("compsize", "compsize", "RB"),
+      state_end = c("compsize", "RB", "compsize")
+    )) %>%
+    define_domains(compsize = c(L, U, 100)) %>%
+    define_pop_state(pop_vectors = list(n_compsize = runif(100), n_RB = 15)) %>%
+    
+    # Run the model
+    make_ipm(iterations = 150, # 150 is plenty for the null to reach asymptotic lambda
+             kernel_seq = sample(1:47, 150, replace = TRUE),
+             usr_funs = list(dt_scaled = dt_scaled, pt_scaled = pt_scaled))
+  
+  #return the asymptotic lambda
+  return(temp_ipm$pop_state$lambda[150]) 
+}
+
+#baseline lambda to calculate elasticity
+baseline_lambda <- run_null_ipm(ipm_parms)
+
+#tested parameters
+params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
+elasticity_results <- data.frame(Parameter = character(), 
+                                 New_Lambda = numeric(), 
+                                 Elasticity = numeric())
+
+#loop to calculate elasticity
+for (p in params_to_test) {
+  
+  #baseline parameters
+  test_parms <- ipm_parms
+  
+  #perturb parameter by 5%
+  perturbation <- test_parms[[p]] * 0.05
+  test_parms[[p]] <- test_parms[[p]] + perturbation
+  
+  #run the model with the tweaked parameter
+  new_lambda <- run_null_ipm(test_parms)
+  
+  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
+  elas <- ((new_lambda - baseline_lambda) / baseline_lambda) / 0.05
+  
+  #store results
+  elasticity_results <- rbind(elasticity_results, 
+                              data.frame(Parameter = p, 
+                                         New_Lambda = new_lambda, 
+                                         Elasticity = elas))
+}
+
+print(elasticity_results)
+
+elasticity_results$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
+                                           "Seedling Survival", "Germination Rate", "Number of seeds")
+
+
+#1996-2025 climate resampled IPM
+#does not sequentially run climate years
+#resamples climate variables from modern climate regime for 200 iterations
+run_clim_ipm <- function(modified_parms) {
+  
+  set.seed(42)
+  
+  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
+                       det_stoch = "stoch", kern_param = "kern") %>%
+    
+    # P Kernel (Survival & Growth)
+    define_kernel(name = "P_yr", family = "CC",
+                  formula = s * G * (1-pf) * d_compsize,
+                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
+                               s_snw_lag3 * sp_surv_yr +
+                               s_spr_lag4 * spt_surv_yr +
+                               s_sum_lag1 * sut_surv_yr),
+                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
+                  mu_g = g_int + g_slope*compsize_1 +
+                    g_spr_lag1 * spt1_grow_yr +
+                    g_spr_lag2 * spt2_grow_yr +
+                    g_sum_lag2 * sut_grow_yr,
+                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * sp_rep_yr +
+                                r_sum_lag0 * sut_rep_yr +
+                                r_spr_lag0 * spt_rep_yr),
+                  data_list = modified_parms,
+                  states = list(c("compsize")),
+                  evict_cor = TRUE,
+                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Fecundity Kernel
+    define_kernel(name = "Fe_yr", family = "CD",
+                  formula = pf * fs * num_seeds * g_est * s_SB,
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * sp_rep_yr +
+                                r_sum_lag0 * sut_rep_yr +
+                                r_spr_lag0 * spt_rep_yr),
+                  fs = exp(f_int + f_slope*compsize_1),
+                  data_list = modified_parms,
+                  states = list(c("compsize", "RB")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Recruit Bank Kernel
+    define_kernel(name = "RB_yr", family = "DC",
+                  formula = s1 * f1_dist * d_compsize,
+                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
+                  mu_f1 = rec_int_c +
+                    rec_slope_sm0 * sm0_rec_yr +
+                    rec_slope_sm1 * sm1_rec_yr,
+                  sd_f1 = rec_sd_c,
+                  data_list = modified_parms,
+                  states = list(c("RB", "compsize")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Where kernels go
+    define_impl(make_impl_args_list(
+      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
+      int_rule = rep("midpoint", 3),
+      state_start = c("compsize", "compsize", "RB"),
+      state_end = c("compsize", "RB", "compsize")
+    )) %>%
+    define_domains(compsize = c(L, U, 100)) %>%
+    define_pop_state(pop_vectors = list(n_compsize = initial_size, n_RB = 10)) %>%
+    
+    # Run the model
+    make_ipm(iterations = 200,
+             kernel_seq = sample(18:47, size = 200, replace = TRUE),
+             usr_funs = list(dt_scaled = dt_scaled,
+                             pt_scaled = pt_scaled))
+  
+  #return the asymptotic lambda
+  annual_lambdas <- temp_ipm$pop_state$lambda
+  stoch_lambda <- exp(mean(log(annual_lambdas)))
+  
+  return(stoch_lambda)
+}
+
+baseline_lambda_climate <- run_clim_ipm(ipm_parms_clim)
+
+#tested parameters
+params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
+elasticity_results_climate <- data.frame(Parameter = character(), 
+                                 New_Lambda = numeric(), 
+                                 Elasticity = numeric())
+
+
+#loop to calculate elasticity
+for (p in params_to_test) {
+  
+  #baseline parameters
+  test_parms <- ipm_parms_clim
+  
+  #perturb parameter by 5%
+  perturbation <- test_parms[[p]] * 0.05
+  test_parms[[p]] <- test_parms[[p]] + perturbation
+  
+  #run the model with the tweaked parameter
+  new_lambda <- run_clim_ipm(test_parms)
+  
+  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
+  elas <- ((new_lambda - baseline_lambda_climate) / baseline_lambda_climate) / 0.05
+  
+  #store results
+  elasticity_results_climate <- rbind(elasticity_results_climate, 
+                              data.frame(Parameter = p, 
+                                         New_Lambda = new_lambda, 
+                                         Elasticity = elas))
+}
+
+
+elasticity_results_climate$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
+                                           "Seedling Survival", "Germination Rate", "Number of seeds")
+
+
+
+
+#1979-1995 climate regime resampled IPM
+run_clim_pre_ipm <- function(modified_parms) {
+  
+  set.seed(42)
+  
+  temp_ipm <- init_ipm(sim_gen = "general", di_dd = "di", 
+                       det_stoch = "stoch", kern_param = "kern") %>%
+    
+    # P Kernel (Survival & Growth)
+    define_kernel(name = "P_yr", family = "CC",
+                  formula = s * G * (1-pf) * d_compsize,
+                  s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
+                               s_snw_lag3 * sp_surv_yr +
+                               s_spr_lag4 * spt_surv_yr +
+                               s_sum_lag1 * sut_surv_yr),
+                  G = dt_scaled(compsize_2, mean = mu_g, sd = g_sd, df = t_df),
+                  mu_g = g_int + g_slope*compsize_1 +
+                    g_spr_lag1 * spt1_grow_yr +
+                    g_spr_lag2 * spt2_grow_yr +
+                    g_sum_lag2 * sut_grow_yr,
+                  g_sd = exp(0.5 * (d_int + d_slope*compsize_1)),
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * sp_rep_yr +
+                                r_sum_lag0 * sut_rep_yr +
+                                r_spr_lag0 * spt_rep_yr),
+                  data_list = modified_parms,
+                  states = list(c("compsize")),
+                  evict_cor = TRUE,
+                  evict_fun = truncated_distributions(fun = "t_scaled", target = "G"),
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Fecundity Kernel
+    define_kernel(name = "Fe_yr", family = "CD",
+                  formula = pf * fs * num_seeds * g_est * s_SB,
+                  pf = plogis(r_int + r_slope*compsize_1 +
+                                r_snw_lag4 * sp_rep_yr +
+                                r_sum_lag0 * sut_rep_yr +
+                                r_spr_lag0 * spt_rep_yr),
+                  fs = exp(f_int + f_slope*compsize_1),
+                  data_list = modified_parms,
+                  states = list(c("compsize", "RB")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Recruit Bank Kernel
+    define_kernel(name = "RB_yr", family = "DC",
+                  formula = s1 * f1_dist * d_compsize,
+                  f1_dist = dnorm(compsize_2, mu_f1, sd_f1),
+                  mu_f1 = rec_int_c +
+                    rec_slope_sm0 * sm0_rec_yr +
+                    rec_slope_sm1 * sm1_rec_yr,
+                  sd_f1 = rec_sd_c,
+                  data_list = modified_parms,
+                  states = list(c("RB", "compsize")),
+                  evict_cor = FALSE,
+                  uses_par_sets = TRUE,
+                  par_set_indices = list(yr = 1:47)) %>%
+    
+    # Where kernels go
+    define_impl(make_impl_args_list(
+      kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
+      int_rule = rep("midpoint", 3),
+      state_start = c("compsize", "compsize", "RB"),
+      state_end = c("compsize", "RB", "compsize")
+    )) %>%
+    define_domains(compsize = c(L, U, 100)) %>%
+    define_pop_state(pop_vectors = list(n_compsize = initial_size, n_RB = 10)) %>%
+    
+    # Run the model
+    make_ipm(iterations = 200,
+             kernel_seq = sample(1:17, size = 200, replace = TRUE),
+             usr_funs = list(dt_scaled = dt_scaled,
+                             pt_scaled = pt_scaled))
+  
+  #return the asymptotic lambda
+  annual_lambdas <- temp_ipm$pop_state$lambda
+  stoch_lambda <- exp(mean(log(annual_lambdas)))
+  
+  return(stoch_lambda)
+}
+
+
+baseline_lambda_pre_climate <- run_clim_pre_ipm(ipm_parms_clim)
+
+#tested parameters
+params_to_test <- c("s_int", "g_int", "r_int", "s_SB", "g_est", "num_seeds")
+elasticity_results_pre_climate <- data.frame(Parameter = character(), 
+                                         New_Lambda = numeric(), 
+                                         Elasticity = numeric())
+
+
+#loop to calculate elasticity
+for (p in params_to_test) {
+  
+  #baseline parameters
+  test_parms <- ipm_parms_clim
+  
+  #perturb parameter by 5%
+  perturbation <- test_parms[[p]] * 0.05
+  test_parms[[p]] <- test_parms[[p]] + perturbation
+  
+  #run the model with the tweaked parameter
+  new_lambda <- run_clim_pre_ipm(test_parms)
+  
+  #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
+  elas <- ((new_lambda - baseline_lambda_pre_climate) / baseline_lambda_pre_climate) / 0.05
+  
+  #store results
+  elasticity_results_pre_climate <- rbind(elasticity_results_pre_climate, 
+                                      data.frame(Parameter = p, 
+                                                 New_Lambda = new_lambda, 
+                                                 Elasticity = elas))
+}
+
+
+elasticity_results_pre_climate$Biological_Process <- c("Adult Survival", "Growth", "Probability of Flowering", 
+                                                   "Seedling Survival", "Germination Rate", "Number of seeds")
+df_null <- elasticity_results %>%
+  mutate(Model = "Mean Climate (Null)")
+
+df_clim <- elasticity_results_climate %>%
+  mutate(Model = "Stochastic Climate (1996-2025)")
+
+df_pre_clim <- elasticity_results_pre_climate %>% 
+  mutate(Model = "Stochastic Climate (1979-1995)")
+
+combined_elasticity <- bind_rows(df_null, df_clim, df_pre_clim)
+combined_elasticity$Model <- factor(combined_elasticity$Model, 
+                                    levels = c("Mean Climate (Null)",
+                                               "Stochastic Climate (1996-2025)",
+                                               "Stochastic Climate (1979-1995)"))
+
+climate_elasticities <- bind_rows(df_clim, df_pre_clim)
+
+
+#elasticity plot
+ggplot(combined_elasticity, aes(x = reorder(Biological_Process, Elasticity), y = Elasticity, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), color = "black", width = 0.7) +
+  geom_text(
+    aes(
+      label = sprintf("%.3f", Elasticity),
+      hjust = ifelse(Elasticity >= 0, -0.2, 1.2)
+    ),
+    position = position_dodge(width = 0.8),
+    size = 3.2
+  ) +
+  
+  coord_flip() +
+  scale_y_continuous(expand = expansion(mult = c(0.18, 0.18))) +
+  scale_fill_manual(values = c("Mean Climate (Null)" = "gray70", 
+                               "Stochastic Climate (1996-2025)" = "darkred",
+                               "Stochastic Climate (1979-1995)" = "steelblue")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.75) +
+  theme_classic(base_size = 15) +
+  labs(x = "Biological Process",
+       y = "Elasticity",
+       fill = "Model Type") +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0))
+  )
+
+ggsave("Elasticity_Figure_stochastic.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)
+  
+ggsave("Survival_Elasticites.png", 
+       plot = last_plot(), 
+       width = 8.5, 
+       height = 5.5, 
+       units = "in", 
+       dpi = 300)
+
+
+
+
+
+### Monocarpy analysis----
+
+#null df
+r_int_surface <- data.frame()
+baseline_r_int  <- ipm_parms_clim$r_int
+
+#additive perturbation of reproduction intercept
+#baseline r_int is -5.751604
+#creates a linear relationship (for this domain of perturbation)
+#modern climate (1996-2025)
+for (delta in seq(from = -1.5, to = 1.5, by = 0.15)) {
+  
+  test_parms <- ipm_parms_clim
+  
+  test_parms$r_int <- baseline_r_int + delta
+  
+  new_lambda <- run_clim_ipm(test_parms)
+  
+  sens <- (new_lambda - baseline_lambda_climate) / delta
+  if (delta == 0) sens <- 0
+  
+  r_int_surface <- rbind(r_int_surface, data.frame(
+    Delta_Shift = delta,               # Negative = lower repro, Positive = higher repro
+    r_int_value = test_parms$r_int,   # Absolute intercept value
+    New_Lambda  = new_lambda,
+    Sensitivity = sens
+  ))
+  
+  
+
+}
+
+print(r_int_surface)
+
+ggplot(r_int_surface, aes(x = Delta_Shift, y = New_Lambda)) +
+  geom_point()
+
+#null df
+r_int_surface_pre <- data.frame()
+#historical climate (1979-2025)
+for (delta in seq(from = -1.5, to = 1.5, by = 0.15)) {
+  
+  test_parms <- ipm_parms_clim
+  
+  test_parms$r_int <- baseline_r_int + delta
+  
+  new_lambda <- run_clim_pre_ipm(test_parms)
+  
+  sens <- (new_lambda - baseline_lambda_pre_climate) / delta
+  if (delta == 0) sens <- 0
+  
+  r_int_surface_pre <- rbind(r_int_surface_pre, data.frame(
+    Delta_Shift = delta,               # Negative = lower repro, Positive = higher repro
+    r_int_value = test_parms$r_int,   # Absolute intercept value
+    New_Lambda  = new_lambda,
+    Sensitivity = sens
+  ))
+}
+
+ggplot(r_int_surface_pre, aes(x = Delta_Shift, y = New_Lambda)) +
+  geom_point()
+
+r_int_surface <- r_int_surface %>% 
+  mutate(Model = as.factor("Modern Climate"))
+
+r_int_surface_pre <- r_int_surface_pre %>% 
+  mutate(Model = as.factor("Historical Climate"))
+
+r_surface <- bind_rows(r_int_surface, r_int_surface_pre)
+
+ggplot(r_surface, aes(x = Delta_Shift, y = New_Lambda, color = Model)) +
+  geom_point()
+
+
+#slopes differ between historical climate and modern climate
+#obviously modern climate is shifted down, but the slopes shift too
+
+mod_lm <- lm(r_int_surface$New_Lambda ~ r_int_surface$Delta_Shift)
+summary(mod_lm)
+
+his_lm <- lm(r_int_surface_pre$New_Lambda ~ r_int_surface_pre$Delta_Shift)
+summary(his_lm)
+
+r_slope_surface <- data.frame()
+baseline_r_slope <- ipm_parms_clim$r_slope
+
+for (delta in seq(from = -1.5, to = 1.5, by = 0.1)) {
+  
+  test_parms <- ipm_parms_clim
+  test_parms$r_slope <- baseline_r_slope + delta
+  
+  new_lambda    <- run_clim_ipm(test_parms)
+  new_lambda_pre <- run_clim_pre_ipm(test_parms)
+  
+  sens <- (new_lambda - baseline_lambda_climate) / delta
+  if (delta == 0) sens <- 0
+  
+  r_slope_surface <- rbind(r_slope_surface, data.frame(
+    Delta_Shift   = delta,
+    r_slope_value = test_parms$r_slope,
+    New_Lambda    = new_lambda,
+    New_Lambda_Pre = new_lambda_pre,
+    Sensitivity   = sens
+  ))
+}
+slope_lm_mod  <- lm(New_Lambda     ~ Delta_Shift, data = r_slope_surface)
+slope_lm_pre  <- lm(New_Lambda_Pre ~ Delta_Shift, data = r_slope_surface)
+summary(slope_lm_mod)
+summary(slope_lm_pre)
+
+
+ggplot(r_slope_surface, aes(x = Delta_Shift)) +
+  geom_point(aes(y = New_Lambda), color = "green") +
+  geom_point(aes(y = New_Lambda_Pre), color = "red")
+
+non_mod <- gam(New_Lambda ~ s(Delta_Shift),
+                   family = gaussian,
+                   data = r_slope_surface)
+summary(non_mod)
+non_his <- gam(New_Lambda_Pre ~ s(Delta_Shift),
+        family = gaussian,
+        data = r_slope_surface)
+summary(non_his)
+
+#null df
+survival_int_surface <- data.frame()
+baseline_survival <- ipm_parms_clim$s_int
+
+#additive perturbation for (composite size) slope
+#baseline is 1.42967
+#both modern and historical climate
+for (delta in seq(from = -0.1, to = 0.1, by = 0.02)) {
+  
+  test_parms <- ipm_parms_clim
+  perturbation <- baseline_survival * delta
+  test_parms$s_int <- baseline_survival + perturbation
+  
+  new_lambda    <- run_clim_ipm(test_parms)
+  new_lambda_pre <- run_clim_pre_ipm(test_parms)
+  
+  sens <- (new_lambda - baseline_lambda_climate) / delta
+  if (delta == 0) sens <- 0
+  
+  survival_int_surface <- rbind(survival_int_surface, data.frame(
+    Delta_Shift   = delta,
+    s_int_value   = test_parms$s_int,
+    New_Lambda    = new_lambda,
+    New_Lambda_Pre = new_lambda_pre,
+    Sensitivity   = sens,
+    Perturbation  = perturbation
+  ))
+}
+
+#creates a saturating relationship
+ggplot(survival_int_surface, aes(x = Perturbation)) +
+  geom_point(aes(y = New_Lambda), color = "green") +
+  geom_point(aes(y = New_Lambda_Pre), color = "red")
+
+#slopes change from historical to modern climate
+mod_surv <- lm(New_Lambda ~ Perturbation, data = survival_int_surface)
+his_surv <-lm(New_Lambda_Pre ~ Perturbation, data = survival_int_surface)
+summary(mod_surv)
+summary(his_surv)
