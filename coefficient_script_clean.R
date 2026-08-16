@@ -382,8 +382,10 @@ Tg_Climate %>%
 
 rep_count <- Tg_data %>%
   group_by(Year) %>%
+  summarize(pop_size = n())
   filter(rep == 1 & Year > 1980) %>% 
-  summarize(n_rep = n())
+  summarize(n_rep = n()) %>% 
+  mutate(prop = n_rep / pop_size)
   
 ggplot(rep_count, aes(x = Year, y = n_rep))+
   geom_point()
