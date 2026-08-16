@@ -376,3 +376,14 @@ saveRDS(initial_size_vector_1996, file = "initial_size_vector_1996.rds")
 Tg_Climate %>% 
   filter(Year == 1995) %>% 
   pull(comp_size)
+
+
+
+
+rep_count <- Tg_data %>%
+  group_by(Year) %>%
+  filter(rep == 1 & Year > 1980) %>% 
+  summarize(n_rep = n())
+  
+ggplot(rep_count, aes(x = Year, y = n_rep))+
+  geom_point()
