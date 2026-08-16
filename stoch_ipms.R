@@ -1147,6 +1147,10 @@ r_surface <- bind_rows(r_int_surface, r_int_surface_pre)
 
 ggplot(r_surface, aes(x = Delta_Shift, y = New_Lambda, color = Model)) +
   geom_point() +
+  scale_color_manual(values = c(
+    "Modern Climate" = "red",
+    "Historical Climate" = "green"
+  )) +
   theme_classic(base_size = 11) +
   labs(y = "New Lambda", x = "Delta Shift")
 
@@ -1228,42 +1232,40 @@ non_sens_his <- gam(Sensitivity_his ~ s(Delta_Shift),
                     data = r_slope_surface)
 summary(non_sens_his)
 
-#null df
-survival_int_surface <- data.frame()
-baseline_survival <- ipm_parms_clim$s_int
 
-#additive perturbation for (composite size) slope
-#baseline is 1.42967
-#both modern and historical climate
-for (delta in seq(from = -0.1, to = 0.1, by = 0.02)) {
-  
-  test_parms <- ipm_parms_clim
-  perturbation <- baseline_survival * delta
-  test_parms$s_int <- baseline_survival + perturbation
-  
-  new_lambda    <- run_clim_ipm(test_parms)
-  new_lambda_pre <- run_clim_pre_ipm(test_parms)
-  
-  sens <- (new_lambda - baseline_lambda_climate) / delta
-  if (delta == 0) sens <- 0
-  
-  survival_int_surface <- rbind(survival_int_surface, data.frame(
-    Delta_Shift   = delta,
-    s_int_value   = test_parms$s_int,
-    New_Lambda    = new_lambda,
-    New_Lambda_Pre = new_lambda_pre,
-    Sensitivity   = sens,
-    Perturbation  = perturbation
-  ))
-}
+#long-format data for analysis
+long_lambda <- pivot_longer(
+  data = r_slope_surface,
+  cols = c(New_Lambda, New_Lambda_Pre),
+  names_to = "Model",
+  values_to = "Lambda"
+) %>% 
+  mutate(Model = factor(Model))
 
-#creates a saturating relationship
-ggplot(survival_int_surface, aes(x = Perturbation)) +
-  geom_point(aes(y = New_Lambda), color = "green") +
-  geom_point(aes(y = New_Lambda_Pre), color = "red")
 
-#slopes change from historical to modern climate
-mod_surv <- lm(New_Lambda ~ Perturbation, data = survival_int_surface)
-his_surv <-lm(New_Lambda_Pre ~ Perturbation, data = survival_int_surface)
-summary(mod_surv)
-summary(his_surv)
+#better sensitivity analysis
+combined_sens <- gam(Lambda ~ Model + s(Delta_Shift, by = Model),
+                     data = long_lambda)
+
+
+d_modern <- gratia::derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda",
+                        data = data.frame(Delta_Shift = seq(-1.5, 1.5, length.out = 300),
+                                          Model = "New_Lambda"))
+d_hist   <- derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda_Pre",
+                        data = data.frame(Delta_Shift = seq(-1.5, 1.5, length.out = 300),
+                                          Model = "New_Lambda_Pre"))
+
+deriv_diff <- data.frame(
+  Delta_Shift = d_modern$Delta_Shift,
+  diff = d_modern$.derivative - d_hist$.derivative,
+  se   = sqrt(d_modern$.se^2 + d_hist$.se^2)  # valid if the two group smooths are fit independently/orthogonally, which they are with by=Model
+) %>%
+  mutate(lower = diff - 1.96*se, upper = diff + 1.96*se)
+
+ggplot(deriv_diff, aes(Delta_Shift, diff)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed")
+
+
+
