@@ -1146,7 +1146,9 @@ r_int_surface_pre <- r_int_surface_pre %>%
 r_surface <- bind_rows(r_int_surface, r_int_surface_pre)
 
 ggplot(r_surface, aes(x = Delta_Shift, y = New_Lambda, color = Model)) +
-  geom_point()
+  geom_point() +
+  theme_classic(base_size = 11) +
+  labs(y = "New Lambda", x = "Delta Shift")
 
 
 #slopes differ between historical climate and modern climate
@@ -1169,27 +1171,42 @@ for (delta in seq(from = -1.5, to = 1.5, by = 0.1)) {
   new_lambda    <- run_clim_ipm(test_parms)
   new_lambda_pre <- run_clim_pre_ipm(test_parms)
   
-  sens <- (new_lambda - baseline_lambda_climate) / delta
-  if (delta == 0) sens <- 0
+  sens_mod <- (new_lambda - baseline_lambda_climate) / delta
+  sens_his <- (new_lambda_pre - baseline_lambda_pre_climate) / delta
+  if (delta == 0) sens_mod <- 0
+  if (delta == 0) sens_his <- 0
   
   r_slope_surface <- rbind(r_slope_surface, data.frame(
     Delta_Shift   = delta,
     r_slope_value = test_parms$r_slope,
     New_Lambda    = new_lambda,
     New_Lambda_Pre = new_lambda_pre,
-    Sensitivity   = sens
+    Sensitivity_Mod   = sens_mod,
+    Sensitivity_his = sens_his
   ))
 }
+
 slope_lm_mod  <- lm(New_Lambda     ~ Delta_Shift, data = r_slope_surface)
 slope_lm_pre  <- lm(New_Lambda_Pre ~ Delta_Shift, data = r_slope_surface)
 summary(slope_lm_mod)
 summary(slope_lm_pre)
 
 
+
 ggplot(r_slope_surface, aes(x = Delta_Shift)) +
   geom_point(aes(y = New_Lambda), color = "green") +
-  geom_point(aes(y = New_Lambda_Pre), color = "red")
+  geom_point(aes(y = New_Lambda_Pre), color = "red") +
+  theme_classic(base_size = 11) +
+  labs(y = "Lambda", x = "Delta Shift")
 
+ggplot(r_slope_surface, aes(x = Delta_Shift)) +
+  geom_point(aes(y = Sensitivity_Mod), color = "green") +
+  geom_point(aes(y = Sensitivity_his), color = "red") +
+  labs(y = "Sensitivity", x = "Delta Shift") +
+  theme_classic(base_size = 11)
+
+#lambda gams
+#slopes differ under climate regimes
 non_mod <- gam(New_Lambda ~ s(Delta_Shift),
                    family = gaussian,
                    data = r_slope_surface)
@@ -1198,6 +1215,18 @@ non_his <- gam(New_Lambda_Pre ~ s(Delta_Shift),
         family = gaussian,
         data = r_slope_surface)
 summary(non_his)
+
+#sensitivity gams
+#slopes differ under climate regimes
+non_sens_mod <- gam(Sensitivity_Mod ~ s(Delta_Shift),
+               family = gaussian,
+               data = r_slope_surface)
+summary(non_sens_mod)
+
+non_sens_his <- gam(Sensitivity_his ~ s(Delta_Shift),
+                    family = gaussian,
+                    data = r_slope_surface)
+summary(non_sens_his)
 
 #null df
 survival_int_surface <- data.frame()
