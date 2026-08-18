@@ -15,6 +15,7 @@ ipm_parms$s_SB = 0.32
 ### Helper functions/variables----
 
 #used to help manage t-distributed growth
+#these are used in growth distribution parts of the survival kernels
 dt_scaled <- function(x, mean, sd, df) {
   dt((x - mean) / sd, df = df) / sd
 }
@@ -29,6 +30,8 @@ L = -3.990192 - 0.5
 #upper bound for size (+0.5 to account for size eviction)
 U = 6.025928 + 0.5
 
+#these +-0.5 are arbitrary and don't necessarily follow the 20% rule
+#but +-0.5 standard deviations was convenient and seems to work in the ipms
 
 
 
@@ -37,6 +40,13 @@ U = 6.025928 + 0.5
 
 
 ### Building kernels----
+
+#defining the structure of the ipms
+#general ipm because we have the recruit bank
+#we are using a density independent ipm
+#stochastic to feed climate data into the ipm
+#we are using kernel resampling because we are feeding historical data
+#each kernel is resamapled each year
 
 null_stoch_ipm <- init_ipm(sim_gen = "general",
                  di_dd = "di",
@@ -49,6 +59,7 @@ null_stoch_ipm <- define_kernel(
   name = "P_yr",
   family = "CC",
   formula = s * G * (1-pf) * d_compsize,
+  #d_compsize is just an integration factor so ipmr treats the formula correctly
   s = plogis(s_int + s_slope*compsize_1 + s_quad*(compsize_1)^2 +
                s_snw_lag3 * snowpack_mean +
                s_spr_lag4 * spring_temp_mean +
@@ -66,6 +77,7 @@ null_stoch_ipm <- define_kernel(
   data_list = ipm_parms,
   states = list(c("compsize")),
   evict_cor = TRUE,
+  #uses t-distribution for eviction correction function
   evict_fun = truncated_distributions(fun = "t_scaled",
                                       target = "G"),
   uses_par_sets = TRUE,
@@ -118,6 +130,7 @@ null_stoch_ipm <- define_impl(
   proto_ipm = null_stoch_ipm,
   make_impl_args_list(
     kernel_names = c("P_yr", "Fe_yr", "RB_yr"),
+    #midpoint integration rule over 3 distinct states
     int_rule = c(rep("midpoint", 3)),
     state_start = c("compsize", "compsize", "RB"),
     state_end = c("compsize", "RB", "compsize")
@@ -129,6 +142,7 @@ null_stoch_ipm <- define_impl(
 null_stoch_ipm <- define_domains(
   proto_ipm = null_stoch_ipm,
   # 100 for number of meshpoints to integrate over
+  # 100 is the standard, "default" number of meshpoints
   compsize = c(L, U, 100)
 )
 
@@ -140,6 +154,8 @@ null_stoch_ipm <- define_pop_state(
     n_compsize = initial_size,
     #recruit bank number is rough estimation
     n_RB = 10
+    #empirical size distribution does not empirically account for individuals
+    #"hidden" in the recruit bank
   )
 )
 
@@ -148,6 +164,7 @@ null_stoch_ipm <- make_ipm(
   proto_ipm = null_stoch_ipm,
   iterations = 47,
   kernel_seq = 1:47,
+  #uses the helper functions
   usr_funs = list(
     dt_scaled = dt_scaled,
     pt_scaled = pt_scaled
@@ -156,8 +173,12 @@ null_stoch_ipm <- make_ipm(
 )
 
 lambda(null_stoch_ipm, log = FALSE)
+#IS convergent to asymptotic
 is_conv_to_asymptotic(null_stoch_ipm)
 
+#annual lambdas by year
+#besides transient dynamics, these approach a constant value
+#because we are using a constant climate for this ipm
 annual_lambdas_null <- null_stoch_ipm$pop_state$lambda
 lambda_df <- data.frame(
   Year = 1979:2025,
@@ -180,6 +201,7 @@ absolute_pop_df <- data.frame(
   Total_N = absolute_pop
 )
 
+#after transient dynamics wash out, we steady out into approximately a linear curve
 ggplot(absolute_pop_df, aes(x = Year, y = Total_N)) +
   geom_line()
 
@@ -197,6 +219,9 @@ ggplot(absolute_pop_df, aes(x = Year, y = Total_N)) +
 
 ### Additional data needed----
 
+#these parameters include the time-lag corrected climate inputs "baked into"
+#each vital rate, so can call each climate variable without having to explicitly
+#define the time lags within the ipm
 ipm_parms_clim <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/ipm_parms_climate.RDS")
 
 ipm_parms_clim$s_SB = 0.32
@@ -320,6 +345,8 @@ clim_stoch_ipm <- make_ipm(
   return_all_envs = TRUE
 )
 
+#lambda is not convergent to asymptotic because we are feeding yearly-differing
+#climate variables
 lambda(clim_stoch_ipm, log = FALSE)
 
 
