@@ -1275,11 +1275,12 @@ long_lambda <- pivot_longer(
 combined_sens <- gam(Lambda ~ Model + s(Delta_Shift, by = Model),
                      data = long_lambda)
 
-
+#modern climate derivative curve (under perturbation set)
 d_modern <- gratia::derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda",
                         data = data.frame(Delta_Shift = seq(-1.5, 1.5, length.out = 300),
                                           Model = "New_Lambda"))
-d_hist   <- derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda_Pre",
+#historical climate derivative curve
+d_hist   <- gratia::derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda_Pre",
                         data = data.frame(Delta_Shift = seq(-1.5, 1.5, length.out = 300),
                                           Model = "New_Lambda_Pre"))
 
@@ -1290,6 +1291,8 @@ deriv_diff <- data.frame(
 ) %>%
   mutate(lower = diff - 1.96*se, upper = diff + 1.96*se)
 
+#different additive perturbations yield different derivatives under
+#historical and modern climates
 ggplot(deriv_diff, aes(Delta_Shift, diff)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
   geom_line() +
