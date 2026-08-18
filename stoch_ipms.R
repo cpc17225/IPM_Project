@@ -5,6 +5,7 @@ library(tidyverse)
 library(Metrics)
 library(patchwork)
 library(mgcv)
+library(gratia)
 
 ipm_parms <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/ipmr_parms_comp.RDS")
 initial_size <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/initial_size_vector.RDS")
