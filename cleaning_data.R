@@ -5,7 +5,7 @@ library(readxl)
 library(readr)
 
 Grandiflora_Cleaned <- read_excel("Grandiflora_Cleaned.xlsx", na = "NA")
-Climate_Data <- read_csv("C:/Users/Owner/Downloads/barr_snowmelt_date_2022.csv")
+Climate_Data <- read_csv("barr_snowmelt_date_2022.csv")
 
 ### Renaming, data structures----
 
@@ -132,13 +132,11 @@ Climate_Data_fix <- Climate_data_temp %>%
 full_data <- clean_data %>% 
   left_join(Climate_Data_fix, by = "Year")
 
-saveRDS(full_data, file = "full_data.rds")
 
 #Making climatic reproductive dataset
 full_data_rep <- full_data %>% 
   filter(NumFlowers>0)
 
-saveRDS(full_data_rep, file = "full_data_rep.rds")
 
 
 
@@ -203,12 +201,6 @@ saveRDS(Tg_data_climate_clean_rep, file = "Tg_climate_clean_scale_rep.rds")
 
 
 
-#Reproductive Tg_climate
-Tg_climate_rep <- Tg_climate_clean %>% 
-  filter(NumFlowers>0)
-
-saveRDS(Tg_climate_rep, file = "Tg_climate_rep_rds.rds")
-
 
 ### Full dataset for coefficient extraction----
 Tg_data_climate_full_data <- Tg_climate_clean %>% 
@@ -236,7 +228,7 @@ add_climate_lag_yr <- function(data, climate, time) {
   climate_lagged <- climate %>%
     rename_with(~ paste0(.x, "_lag", time), -Year)
   
-  #shift: subtract time from Year so year t in data joins to year t-time climate
+  #subtract time from Year so year t in data joins to year t-time climate
   temp <- data %>%
     mutate(Year_shifted = Year - time) %>%
     left_join(climate_lagged, by = c("Year_shifted" = "Year")) %>%
@@ -245,10 +237,10 @@ add_climate_lag_yr <- function(data, climate, time) {
   return(temp)
 }
 
-# Start with a copy of base data
+#start with a copy of base data
 climate_data_with_lag <- Climate_Data
 
-# Loop through lags 0 to 4 and update climate_data_with_lag sequentially
+#loop through lags 0 to 4 and update climate_data_with_lag sequentially
 for (i in 0:4) {
   climate_data_with_lag <- add_climate_lag_yr(
     data = climate_data_with_lag, 
@@ -256,7 +248,8 @@ for (i in 0:4) {
     time = i
   )
 }
-#Exclude Na
+
+#exclude Na
 climate_data_with_lag <- climate_data_with_lag %>% 
   filter(Year>=1979 & Year < 2026)
 
