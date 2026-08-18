@@ -382,10 +382,31 @@ Tg_Climate %>%
 
 rep_count <- Tg_data %>%
   group_by(Year) %>%
-  summarize(pop_size = n())
   filter(rep == 1 & Year > 1980) %>% 
-  summarize(n_rep = n()) %>% 
-  mutate(prop = n_rep / pop_size)
+  summarize(n_rep = n())
+
+pop_size <- Tg_data %>% 
+  group_by(Year) %>% 
+  filter(Year > 1980) %>% 
+  summarize(count = n())
+
+all_count <- left_join(rep_count, pop_size, by = "Year") %>% 
+  mutate(prop = n_rep/count)
   
 ggplot(rep_count, aes(x = Year, y = n_rep))+
   geom_point()
+
+ggplot(all_count, aes(x = Year, y = prop)) +
+  geom_point()
+
+hist(all_count$prop, breaks = 20)
+all_count$grp <- factor("all")
+
+#reproduction (as a proportion of population size) is increasing over time
+model_mast <- glmmTMB(
+  cbind(n_rep, count - n_rep) ~ Year + ar1(as.factor(Year) + 0 | grp),
+  family = betabinomial(),
+  data = all_count
+)
+
+summary(model_mast)
