@@ -1218,6 +1218,7 @@ for (delta in seq(from = -1.5, to = 1.5, by = 0.1)) {
   ))
 }
 
+#nonlinear so ignore these
 slope_lm_mod  <- lm(New_Lambda     ~ Delta_Shift, data = r_slope_surface)
 slope_lm_pre  <- lm(New_Lambda_Pre ~ Delta_Shift, data = r_slope_surface)
 summary(slope_lm_mod)
