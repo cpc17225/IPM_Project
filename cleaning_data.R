@@ -1,3 +1,13 @@
+### We use this script to clean the data. The original .xlxs is not changed.
+### We manually remove some values that are not biologically relaistic and define
+### composite size here.
+### We use data from Prather et al 2023 for cliamte data, updated from billy barr's website for
+### 2025-2026. 
+### We put time-lagged climate variables in each row for the corresponding year.
+
+
+
+
 ### Packages and loading data----
 
 library(tidyverse)

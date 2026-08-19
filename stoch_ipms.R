@@ -1,3 +1,13 @@
+### This script is used to build all IPMs, as well further analysis that is carried out.
+### This includes elasticity analyses, as well as perturbations to find
+### eigenvalue-perturbation surfaces.
+### We also build our hindcasts in this script.
+
+### We found that climate IPMs better predict population dynamics than mean climate IPMs
+### and that survival elasticity in particularly increases greatly under the modern climate.
+
+
+
 ### Packages and loading data----
 
 library(ipmr)
@@ -1162,8 +1172,6 @@ for (delta in seq(from = -1.5, to = 1.5, by = 0.15)) {
   ))
 }
 
-ggplot(r_int_surface_pre, aes(x = Delta_Shift, y = New_Lambda)) +
-  geom_point()
 
 r_int_surface <- r_int_surface %>% 
   mutate(Model = as.factor("Modern Climate"))
@@ -1192,6 +1200,7 @@ summary(mod_lm)
 his_lm <- lm(r_int_surface_pre$New_Lambda ~ r_int_surface_pre$Delta_Shift)
 summary(his_lm)
 
+#null dataframe
 r_slope_surface <- data.frame()
 baseline_r_slope <- ipm_parms_clim$r_slope
 
@@ -1225,13 +1234,14 @@ summary(slope_lm_mod)
 summary(slope_lm_pre)
 
 
-
+#plot of how lambda responds to additive perturbations to reproduction slope
 ggplot(r_slope_surface, aes(x = Delta_Shift)) +
   geom_point(aes(y = New_Lambda), color = "green") +
   geom_point(aes(y = New_Lambda_Pre), color = "red") +
   theme_classic(base_size = 11) +
   labs(y = "Lambda", x = "Delta Shift")
 
+#plot of how sensitivity responds to additive perturbations to reproduction slope
 ggplot(r_slope_surface, aes(x = Delta_Shift)) +
   geom_point(aes(y = Sensitivity_Mod), color = "green") +
   geom_point(aes(y = Sensitivity_his), color = "red") +

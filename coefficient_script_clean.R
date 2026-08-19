@@ -1,3 +1,9 @@
+### This script is used to build the regressions models from covariates selected from dredging
+### We also extract some recruit sizes, empirical size distributions, and reproduction over time.
+### The IPM parameters used for the data in the IPMs is constructed and saved here.
+
+
+
 ### Packages and loading data----
 
 library(glmmTMB)

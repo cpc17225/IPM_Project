@@ -1,3 +1,11 @@
+### We use the script to dredge regressions for most suitable climate covaraites
+### We use corrected AIC to determine best model.
+### Data is not exported from this script because we rebuild the
+### regressions in "coefficient_script_clean.R"
+
+
+
+
 ### Packages and loading data----
 
 library(MuMIn)
