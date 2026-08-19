@@ -15,6 +15,8 @@ options(na.action = "na.fail")
 ### Survival----
 
 #full survival model
+#we allow 3 climate covariates to prevent overfitting
+#compsize terms are fixed, meaning they are considered in every combination of model
 global_surv <- glmmTMB(
   survival ~ comp_size + I(comp_size^2) + 
     spring.mean.temp_lag0 + spring.mean.temp_lag1 + spring.mean.temp_lag2 +
@@ -26,6 +28,7 @@ global_surv <- glmmTMB(
   data = Tg_data_climate
 )
 
+#use corrected AIC to determine best model
 surv_dredge <- dredge(
   global_surv,
   rank = "AICc",
