@@ -6,7 +6,7 @@ library(tidyverse)
 library(readr)
 library(performance)
 
-
+#data
 Tg_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_data.rds")
 Tg_rep <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_rep.rds")
 Climate_data <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Climate_data_temp.rds")
@@ -15,18 +15,10 @@ Climate_data <- Climate_data %>%
 Tg_Climate <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_climate_clean_scale_full_data.rds")
 Tg_Climate_Flower <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/Tg_climate_clean_scale_flower_data.rds")
 
-#climate data for ipmr
-ipm_climate_data <- Climate_data %>% 
-  filter(Year >=1979) %>% 
-  mutate(scaled_snowmelt = scale(snowmelt)) %>% 
-  mutate(scaled_snowpack = scale(snowpack)) %>% 
-  mutate(scaled_summer_temp = scale(summer.mean.temp)) %>% 
-  mutate(scaled_spring_temp = scale(spring.mean.temp))
-
 
 
 ### Survival analysis----
-#model selection from dredging
+#model is selected from dredge analysis and copied here
 model_surv_comp <- glmmTMB(survival ~ comp_size + I(comp_size^2) +
                            snowpack_lag3 + spring.mean.temp_lag4 + summer.mean.temp_lag1,
                            family = binomial,
@@ -37,6 +29,7 @@ plot(simulateResiduals(model_surv_comp))
 check_collinearity(model_surv_comp)
 
 
+#plot confirms parabolic relationship
 ggplot(Tg_data) +
   geom_smooth(aes(x = comp_size, y = survival, color = "Survival"),
               method = "glm",
@@ -58,7 +51,7 @@ ggplot(Tg_data) +
         legend.text = element_text(size = 12))
   
 
-ggsave("Survival_vital_rate.png", 
+ggsave("Vital_rate_plot.png", 
        plot = last_plot(), 
        width = 8.5, 
        height = 5.5, 
@@ -82,7 +75,7 @@ nu <- as.numeric(family_params(model_growth_comp))
 print(nu)
 #df = 6.460343 < 30  => t_distribution is a better fit and
 #data has leptokurtosis
-#have to implement t-distribution into growth kernel
+#have to implement t-distribution into growth kernel with helper functions
 
 ggplot(Tg_Climate, aes(x = comp_size_prev, y = comp_size)) +
   geom_point()
@@ -175,6 +168,8 @@ cat("Maximum size after Year 1 (z1_max):", z1_max, "\n")
 recruits <- first_appearance %>% 
   filter(first_size_comp<z1_max)
 
+#putting first-year plants into recruit class (less than max compsize define by
+#growth equation) and juveniles/adults (greater than max compsize)
 full_recruit_data <- first_appearance %>% 
   mutate(Classification = if_else(first_size_comp<z1_max, "Recruit", "Juvenile/Adult"))
 
