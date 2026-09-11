@@ -17,9 +17,15 @@ library(patchwork)
 library(mgcv)
 library(gratia)
 
+#vital rate parameters and climate rate values
+#for these "null" climate parameters, all climate variables =0
 ipm_parms <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/ipmr_parms_comp.RDS")
+#initial size used to initialize the IPM
+#this comes from empirical data
 initial_size <- readRDS("C:/Users/Owner/OneDrive/Desktop/R/IPM_Project/initial_size_vector.RDS")
 
+#internal calibration to match empirirical lambda value
+#this seedling survival value is used for all subsequent models
 ipm_parms$s_SB = 0.32
 
 ### Helper functions/variables----
@@ -41,7 +47,7 @@ L = -3.990192 - 0.5
 U = 6.025928 + 0.5
 
 #these +-0.5 are arbitrary and don't necessarily follow the 20% rule
-#but +-0.5 standard deviations was convenient and seems to work in the ipms
+#but +-0.5 standard deviations was convenient and works in the ipms
 
 
 
@@ -64,6 +70,7 @@ null_stoch_ipm <- init_ipm(sim_gen = "general",
                  kern_param = "kern")
 
 #growth/survival kernel (P -> P)
+#this includes the size, growth, and complement of flowering probability
 null_stoch_ipm <- define_kernel(
   proto_ipm = null_stoch_ipm,
   name = "P_yr",
@@ -692,6 +699,11 @@ print(paste("Climate Crash Correlation (1996-):", cor_crash_1996))
 
 ### Elasticity----
 
+#because analytical elasticity analysis is difficult for stochastic IPMs,
+#we use a perturbation approach
+#we perturbed each parameter by delta=0.05, then measured the change in lambda compared to
+#the lambda value calculated without the delta perturbation
+
 
 #null climate elasticities
 run_null_ipm <- function(modified_parms) {
@@ -791,6 +803,7 @@ for (p in params_to_test) {
   new_lambda <- run_null_ipm(test_parms)
   
   #calculate Elasticity: proportional change in lambda / proportional change in parameter (0.05)
+  #from the perturbation approach, this effectively calculates an elasticity value
   elas <- ((new_lambda - baseline_lambda) / baseline_lambda) / 0.05
   
   #store results
@@ -1270,44 +1283,5 @@ non_sens_his <- gam(Sensitivity_his ~ s(Delta_Shift),
                     family = gaussian,
                     data = r_slope_surface)
 summary(non_sens_his)
-
-
-#long-format data for analysis
-long_lambda <- pivot_longer(
-  data = r_slope_surface,
-  cols = c(New_Lambda, New_Lambda_Pre),
-  names_to = "Model",
-  values_to = "Lambda"
-) %>% 
-  mutate(Model = factor(Model))
-
-
-#better sensitivity analysis
-combined_sens <- gam(Lambda ~ Model + s(Delta_Shift, by = Model),
-                     data = long_lambda)
-
-#modern climate derivative curve (under perturbation set)
-d_modern <- gratia::derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda",
-                        data = data.frame(Delta_Shift = seq(-1.5, 1.5, length.out = 300),
-                                          Model = "New_Lambda"))
-#historical climate derivative curve
-d_hist   <- gratia::derivatives(combined_sens, select = "s(Delta_Shift):ModelNew_Lambda_Pre",
-                        data = data.frame(Delta_Shift = seq(-1.5, 1.5, length.out = 300),
-                                          Model = "New_Lambda_Pre"))
-
-deriv_diff <- data.frame(
-  Delta_Shift = d_modern$Delta_Shift,
-  diff = d_modern$.derivative - d_hist$.derivative,
-  se   = sqrt(d_modern$.se^2 + d_hist$.se^2)  # valid if the two group smooths are fit independently/orthogonally, which they are with by=Model
-) %>%
-  mutate(lower = diff - 1.96*se, upper = diff + 1.96*se)
-
-#different additive perturbations yield different derivatives under
-#historical and modern climates
-ggplot(deriv_diff, aes(Delta_Shift, diff)) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
-  geom_line() +
-  geom_hline(yintercept = 0, linetype = "dashed")
-
 
 
